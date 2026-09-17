@@ -127,3 +127,28 @@ def milestone_dates(trajectory: pd.DataFrame) -> dict[str, str | None]:
             reached.iloc[0]["Fecha"].date().isoformat() if not reached.empty else None
         )
     return milestones
+
+
+def thermal_window_dates(
+    trajectory: pd.DataFrame,
+    lower_tt: float = 600.0,
+    upper_tt: float = 800.0,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    """Devuelve las fechas de ingreso y salida de una ventana térmica."""
+    if upper_tt <= lower_tt:
+        raise ValueError("El límite térmico superior debe ser mayor que el inferior.")
+    if "TT_DESDE_PICO" not in trajectory or "Fecha" not in trajectory:
+        return None, None
+    frame = trajectory[["Fecha", "TT_DESDE_PICO"]].copy()
+    frame["Fecha"] = pd.to_datetime(frame["Fecha"], errors="coerce")
+    frame["TT_DESDE_PICO"] = pd.to_numeric(
+        frame["TT_DESDE_PICO"], errors="coerce"
+    )
+    frame = frame.dropna().sort_values("Fecha")
+    lower = frame[frame["TT_DESDE_PICO"] >= float(lower_tt)]
+    if lower.empty:
+        return None, None
+    upper = frame[frame["TT_DESDE_PICO"] >= float(upper_tt)]
+    start = pd.Timestamp(lower.iloc[0]["Fecha"])
+    end = pd.Timestamp(upper.iloc[0]["Fecha"]) if not upper.empty else None
+    return start, end

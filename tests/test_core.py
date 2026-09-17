@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
+from predweem_twin.state import thermal_window_dates
 
 
 ROOT = Path(__file__).parents[1]
@@ -58,3 +59,17 @@ def test_run_uses_observed_daily_coverage_series():
     )
     assert result["Cobertura_Modo"].eq("serie observada interpolada").all()
     assert result["Cobertura_Observada"].tolist() == [True, False, True, False, False]
+
+
+def test_thermal_window_dates_detects_600_and_800_degree_days():
+    trajectory = pd.DataFrame(
+        {
+            "Fecha": pd.date_range("2026-04-01", periods=5, freq="D"),
+            "TT_DESDE_PICO": [550.0, 600.0, 710.0, 800.0, 850.0],
+        }
+    )
+
+    start, end = thermal_window_dates(trajectory)
+
+    assert start == pd.Timestamp("2026-04-02")
+    assert end == pd.Timestamp("2026-04-04")

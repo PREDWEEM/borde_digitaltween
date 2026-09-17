@@ -21,7 +21,11 @@ from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
 from predweem_twin.observations import prepare_observations, read_observation_file
 from predweem_twin.scenarios import apply_scenario
 from predweem_twin.seasonal import load_seasonal_reference
-from predweem_twin.state import build_twin_snapshot, milestone_dates
+from predweem_twin.state import (
+    build_twin_snapshot,
+    milestone_dates,
+    thermal_window_dates,
+)
 from predweem_twin.storage import TwinStore
 from predweem_twin.weather import (
     fetch_open_meteo,
@@ -81,7 +85,14 @@ def load_open_meteo(latitude, longitude, start_date):
     return fetch_open_meteo(latitude, longitude, start_date)
 
 
-def trajectory_chart(df, observations, as_of, audit=None):
+def trajectory_chart(
+    df,
+    observations,
+    as_of,
+    audit=None,
+    lower_thermal_time=600.0,
+    upper_thermal_time=800.0,
+):
     figure = make_subplots(specs=[[{"secondary_y": True}]])
     figure.add_trace(
         go.Bar(
@@ -135,6 +146,35 @@ def trajectory_chart(df, observations, as_of, audit=None):
             ),
             secondary_y=False,
         )
+    thermal_start, thermal_end = thermal_window_dates(
+        df, lower_thermal_time, upper_thermal_time
+    )
+    if thermal_start is not None:
+        displayed_thermal_end = thermal_end or pd.Timestamp(df["Fecha"].max())
+        figure.add_vrect(
+            x0=thermal_start,
+            x1=displayed_thermal_end,
+            fillcolor="rgba(46,125,50,.13)",
+            line_width=0,
+            annotation_text=(
+                f"Ventana fenológica {lower_thermal_time:.0f}–"
+                f"{upper_thermal_time:.0f} °Cd"
+            ),
+            annotation_position="top right",
+        )
+        figure.add_vline(
+            x=thermal_start.timestamp() * 1000,
+            line_color="#2e7d32",
+            line_dash="dot",
+            line_width=1.5,
+        )
+        if thermal_end is not None:
+            figure.add_vline(
+                x=thermal_end.timestamp() * 1000,
+                line_color="#2e7d32",
+                line_dash="dot",
+                line_width=1.5,
+            )
     figure.add_vline(x=pd.Timestamp(as_of).timestamp() * 1000, line_color="#162f25", line_dash="dash")
     forecast_start = pd.Timestamp(as_of) + pd.Timedelta(days=1)
     if pd.Timestamp(df["Fecha"].max()) >= forecast_start:
@@ -363,6 +403,8 @@ with tab_state:
             active_observations,
             as_of,
             assimilation_audit,
+            parameters.tt_control,
+            parameters.tt_limite,
         ),
         width="stretch",
     )
