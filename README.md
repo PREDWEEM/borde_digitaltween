@@ -51,6 +51,8 @@ límites 0–1. No se reentrena ni se recalibra la ANN con cada conteo.
 - carga manual de CSV/XLSX;
 - estado persistente por identificador de lote en SQLite;
 - registro de conteos con incertidumbre;
+- carga masiva de observaciones CSV/XLS/XLSX en formato `FECHA + PLM2` o
+  `FECHA + EMERGENCIA_ACUMULADA`;
 - curva PREDWEEM base frente a estado Twin actualizado;
 - escenarios contrafactuales de lluvia y temperatura;
 - fechas d25, d50, d75 y d95;
@@ -75,6 +77,21 @@ python -m pytest -q
 
 Las pruebas verifican límites biofísicos, monotonía del estado asimilado,
 trazabilidad de la corrección y aislamiento de escenarios futuros.
+
+## Formato de observaciones de campo
+
+La pestaña **Observaciones** acepta dos estructuras:
+
+| Fecha | Valor | Interpretación |
+|---|---:|---|
+| `FECHA` | `PLM2` | Flujo de plantas/m² observado en cada intervalo de muestreo |
+| `FECHA` | `EMERGENCIA_ACUMULADA` u `OBSERVADO` | Acumulado expresado entre 0–1 o 0–100 % |
+
+Para `PLM2`, la aplicación conserva el conteo original y genera la fracción
+acumulada usada por la asimilación. Si la última fecha ya cubre al menos el 85 %
+del progreso simulado, normaliza por el total observado. En una campaña
+incompleta estima el potencial estacional mediante la escala entre los flujos
+simulados y observados. La previsualización muestra el método antes de guardar.
 
 ## Alcance científico
 

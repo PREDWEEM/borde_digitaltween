@@ -13,6 +13,7 @@ from plotly.subplots import make_subplots
 
 from predweem_twin.assimilation import assimilate_observations
 from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
+from predweem_twin.observations import prepare_observations, read_observation_file
 from predweem_twin.scenarios import apply_scenario
 from predweem_twin.state import build_twin_snapshot, milestone_dates
 from predweem_twin.storage import TwinStore
@@ -236,6 +237,106 @@ with tab_state:
 
 with tab_observations:
     st.subheader("Cerrar el circuito con el campo")
+    st.markdown("#### Carga de observaciones")
+    st.caption(
+        "Admite FECHA + PLM2 (flujo por intervalo) o FECHA + "
+        "EMERGENCIA_ACUMULADA/OBSERVADO (0–1 o 0–100 %)."
+    )
+    uploaded_observations = st.file_uploader(
+        "Archivo de emergencia observada",
+        type=["xlsx", "xls", "csv", "tsv"],
+        key="observed_emergence_upload",
+    )
+    upload_columns = st.columns([1.5, 1])
+    upload_mode_label = upload_columns[0].selectbox(
+        "Formato de los valores",
+        [
+            "Detectar automáticamente",
+            "Flujo por intervalo (PLM2)",
+            "Acumulada (%)",
+        ],
+    )
+    upload_uncertainty_pct = upload_columns[1].number_input(
+        "Incertidumbre de la carga (%)",
+        min_value=1.0,
+        max_value=30.0,
+        value=8.0,
+        step=1.0,
+    )
+    mode_map = {
+        "Detectar automáticamente": "auto",
+        "Flujo por intervalo (PLM2)": "flujo",
+        "Acumulada (%)": "acumulado",
+    }
+    if uploaded_observations is not None:
+        try:
+            raw_observations, file_metadata = read_observation_file(uploaded_observations)
+            prepared_observations, import_metadata = prepare_observations(
+                raw_observations,
+                base_trajectory,
+                mode=mode_map[upload_mode_label],
+                uncertainty=upload_uncertainty_pct / 100.0,
+                source_name=(
+                    f'{file_metadata["archivo"]} · hoja {file_metadata["hoja"]}'
+                ),
+            )
+            st.success(
+                f'{import_metadata["filas"]} observaciones válidas. '
+                f'Modo detectado: {import_metadata["modo"]}.'
+            )
+            if import_metadata["modo"] == "flujo":
+                summary_columns = st.columns(3)
+                summary_columns[0].metric(
+                    "Total observado",
+                    f'{import_metadata["total_observado_plm2"]:.1f} plantas/m²',
+                )
+                summary_columns[1].metric(
+                    "Potencial estacional usado",
+                    f'{import_metadata["potencial_estacional_plm2"]:.1f} plantas/m²',
+                )
+                summary_columns[2].metric(
+                    "Progreso simulado en última fecha",
+                    f'{import_metadata["progreso_modelo_ultima_fecha"]:.0%}',
+                )
+                st.caption(import_metadata["metodo_normalizacion"].capitalize() + ".")
+
+            preview_columns = [
+                "Fecha",
+                "Valor_original",
+                "Unidad_original",
+                "Observado",
+                "Incertidumbre",
+            ]
+            if "Acumulado_PLM2" in prepared_observations:
+                preview_columns.insert(2, "Acumulado_PLM2")
+            st.dataframe(
+                prepared_observations[preview_columns],
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Observado": st.column_config.NumberColumn(
+                        "Emergencia acumulada", format="percent"
+                    ),
+                    "Incertidumbre": st.column_config.NumberColumn(
+                        "Incertidumbre", format="percent"
+                    ),
+                },
+            )
+            if st.button(
+                "Incorporar observaciones al gemelo",
+                type="primary",
+                key="save_observation_upload",
+            ):
+                store.upsert_observations(site_id, prepared_observations)
+                st.success(
+                    f'Se incorporaron {len(prepared_observations)} fechas al lote {site_id}.'
+                )
+                st.rerun()
+        except Exception as error:
+            st.error(f"No fue posible procesar las observaciones: {error}")
+
+    st.divider()
+    st.markdown("#### Registro manual")
     st.caption("Registre emergencia acumulada normalizada (0–100 %). Un registro por fecha y lote.")
     with st.form("observation_form", clear_on_submit=True):
         columns = st.columns([1, 1, 1, 2])
@@ -251,10 +352,26 @@ with tab_observations:
             observation_pct / 100.0,
             observation_uncertainty / 100.0,
             observation_note,
+            raw_value=observation_pct,
+            raw_unit="% acumulado",
+            source_name="Registro manual",
         )
         st.success("Observación registrada. El estado se actualizará con la nueva evidencia.")
         st.rerun()
-    st.dataframe(observations, hide_index=True, width="stretch")
+    st.markdown("#### Observaciones guardadas")
+    st.dataframe(
+        observations,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Observado": st.column_config.NumberColumn(
+                "Emergencia acumulada", format="percent"
+            ),
+            "Incertidumbre": st.column_config.NumberColumn(
+                "Incertidumbre", format="percent"
+            ),
+        },
+    )
 
 with tab_scenarios:
     st.subheader("¿Qué pasa si…?")
