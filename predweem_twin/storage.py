@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS observations (
     raw_value REAL,
     raw_unit TEXT NOT NULL DEFAULT '',
     source_name TEXT NOT NULL DEFAULT 'Manual',
+    replicates_json TEXT NOT NULL DEFAULT '',
+    replicate_scale REAL,
+    replicate_se_plm2 REAL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(site_id, observed_at)
 );
@@ -46,6 +49,9 @@ class TwinStore:
                 "raw_value": "ALTER TABLE observations ADD COLUMN raw_value REAL",
                 "raw_unit": "ALTER TABLE observations ADD COLUMN raw_unit TEXT NOT NULL DEFAULT ''",
                 "source_name": "ALTER TABLE observations ADD COLUMN source_name TEXT NOT NULL DEFAULT 'Manual'",
+                "replicates_json": "ALTER TABLE observations ADD COLUMN replicates_json TEXT NOT NULL DEFAULT ''",
+                "replicate_scale": "ALTER TABLE observations ADD COLUMN replicate_scale REAL",
+                "replicate_se_plm2": "ALTER TABLE observations ADD COLUMN replicate_se_plm2 REAL",
             }
             for column, statement in migrations.items():
                 if column not in existing:
@@ -81,6 +87,9 @@ class TwinStore:
                     raw_value=excluded.raw_value,
                     raw_unit=excluded.raw_unit,
                     source_name=excluded.source_name,
+                    replicates_json='',
+                    replicate_scale=NULL,
+                    replicate_se_plm2=NULL,
                     created_at=CURRENT_TIMESTAMP
                 """,
                 (
@@ -98,17 +107,31 @@ class TwinStore:
     def upsert_observations(self, site_id: str, observations: pd.DataFrame):
         """Guarda una carga validada dentro de una única transacción."""
         rows = []
-        for row in observations.itertuples(index=False):
+        repetition_columns = [
+            column
+            for column in observations.columns
+            if str(column).startswith("Repeticion_")
+            and str(column).endswith("_original")
+        ]
+        for _, row in observations.iterrows():
+            repetitions = [float(row[column]) for column in repetition_columns]
             rows.append(
                 (
                     site_id,
-                    pd.Timestamp(row.Fecha).date().isoformat(),
-                    float(row.Observado),
-                    float(row.Incertidumbre),
-                    str(getattr(row, "Nota", "")),
-                    float(row.Valor_original),
-                    str(getattr(row, "Unidad_original", "")),
-                    str(getattr(row, "Fuente", "Archivo cargado")),
+                    pd.Timestamp(row["Fecha"]).date().isoformat(),
+                    float(row["Observado"]),
+                    float(row["Incertidumbre"]),
+                    str(row.get("Nota", "")),
+                    float(row["Valor_original"]),
+                    str(row.get("Unidad_original", "")),
+                    str(row.get("Fuente", "Archivo cargado")),
+                    json.dumps(repetitions, ensure_ascii=False) if repetitions else "",
+                    float(row["Factor_conversion_repeticiones"])
+                    if repetitions
+                    else None,
+                    float(row["EE_repeticiones_PLM2"])
+                    if repetitions
+                    else None,
                 )
             )
         with self.connect() as connection:
@@ -116,8 +139,9 @@ class TwinStore:
                 """
                 INSERT INTO observations(
                     site_id, observed_at, cumulative, uncertainty, note,
-                    raw_value, raw_unit, source_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    raw_value, raw_unit, source_name, replicates_json,
+                    replicate_scale, replicate_se_plm2
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(site_id, observed_at) DO UPDATE SET
                     cumulative=excluded.cumulative,
                     uncertainty=excluded.uncertainty,
@@ -125,6 +149,9 @@ class TwinStore:
                     raw_value=excluded.raw_value,
                     raw_unit=excluded.raw_unit,
                     source_name=excluded.source_name,
+                    replicates_json=excluded.replicates_json,
+                    replicate_scale=excluded.replicate_scale,
+                    replicate_se_plm2=excluded.replicate_se_plm2,
                     created_at=CURRENT_TIMESTAMP
                 """,
                 rows,
@@ -137,6 +164,9 @@ class TwinStore:
                 SELECT observed_at AS Fecha, cumulative AS Observado,
                        uncertainty AS Incertidumbre, raw_value AS Valor_original,
                        raw_unit AS Unidad_original, source_name AS Fuente,
+                       replicates_json AS Repeticiones_originales,
+                       replicate_scale AS Factor_conversion_repeticiones,
+                       replicate_se_plm2 AS EE_repeticiones_PLM2,
                        note AS Nota, created_at AS Registrado
                 FROM observations WHERE site_id=? ORDER BY observed_at
                 """,

@@ -57,6 +57,33 @@ def test_excel_reader_finds_fecha_plm2_sheet():
     assert metadata == {"archivo": "campo.xlsx", "hoja": "Campo"}
 
 
+def test_three_repetitions_and_mean_per_m2_are_detected():
+    payload = BytesIO()
+    source = pd.DataFrame(
+        {
+            "Fecha": [pd.Timestamp("2026-03-02"), pd.Timestamp("2026-03-16")],
+            1: [10.0, 30.0],
+            2: [12.0, 24.0],
+            3: [8.0, 36.0],
+            "media(SR).m2": [40.0, 120.0],
+        }
+    )
+    with pd.ExcelWriter(payload, engine="openpyxl") as writer:
+        source.to_excel(writer, sheet_name="Hoja1", index=False)
+    payload.name = "tres_repeticiones.xlsx"
+
+    frame, _ = read_observation_file(payload)
+    prepared, metadata = prepare_observations(frame, real_trajectory(), mode="auto")
+
+    assert metadata["modo"] == "flujo"
+    assert metadata["n_repeticiones"] == 3
+    assert np.isclose(metadata["factor_conversion_repeticiones"], 4.0)
+    assert np.isclose(metadata["area_cuadrante_inferida_m2"], 0.25)
+    assert prepared["Valor_original"].tolist() == [40.0, 120.0]
+    assert prepared["Incertidumbre"].between(0.05, 0.30).all()
+    assert "error estándar acumulado" in metadata["metodo_incertidumbre"]
+
+
 def test_bulk_storage_preserves_original_values(tmp_path):
     raw = pd.DataFrame(
         {"FECHA": ["2026-03-02", "2026-03-16"], "PLM2": [12.0, 30.0]}
@@ -69,3 +96,25 @@ def test_bulk_storage_preserves_original_values(tmp_path):
     assert stored["Valor_original"].tolist() == [12.0, 30.0]
     assert stored["Unidad_original"].eq("plantas/m² por intervalo").all()
     assert stored["Fuente"].eq("Archivo cargado").all()
+
+
+def test_bulk_storage_preserves_repetitions(tmp_path):
+    raw = pd.DataFrame(
+        {
+            "FECHA": ["2026-03-02", "2026-03-16"],
+            1: [10.0, 30.0],
+            2: [12.0, 24.0],
+            3: [8.0, 36.0],
+            "media(SR).m2": [40.0, 120.0],
+        }
+    )
+    prepared, _ = prepare_observations(raw, real_trajectory(), mode="flujo")
+    store = TwinStore(tmp_path / "twin.db")
+    store.upsert_observations("Lote-repeticiones", prepared)
+    stored = store.observations("Lote-repeticiones")
+    assert stored["Repeticiones_originales"].tolist() == [
+        "[10.0, 12.0, 8.0]",
+        "[30.0, 24.0, 36.0]",
+    ]
+    assert stored["Factor_conversion_repeticiones"].eq(4.0).all()
+    assert stored["EE_repeticiones_PLM2"].notna().all()

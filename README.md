@@ -86,12 +86,18 @@ La pestaña **Observaciones** acepta dos estructuras:
 |---|---:|---|
 | `FECHA` | `PLM2` | Flujo de plantas/m² observado en cada intervalo de muestreo |
 | `FECHA` | `EMERGENCIA_ACUMULADA` u `OBSERVADO` | Acumulado expresado entre 0–1 o 0–100 % |
+| `Fecha` + `1`, `2`, `3` | `media(SR).m2` | Tres repeticiones por cuadrante y su media convertida a plantas/m² |
 
 Para `PLM2`, la aplicación conserva el conteo original y genera la fracción
 acumulada usada por la asimilación. Si la última fecha ya cubre al menos el 85 %
 del progreso simulado, normaliza por el total observado. En una campaña
 incompleta estima el potencial estacional mediante la escala entre los flujos
 simulados y observados. La previsualización muestra el método antes de guardar.
+
+Cuando el archivo contiene repeticiones, la aplicación comprueba que la media
+sea consistente, infiere el factor de conversión del cuadrante a m² y calcula la
+incertidumbre desde el error estándar acumulado. Se aplica un mínimo de 5 % para
+incorporar variación espacial y de muestreo no representada por tres cuadrantes.
 
 ## Alcance científico
 

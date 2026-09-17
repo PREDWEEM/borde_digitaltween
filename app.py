@@ -245,7 +245,8 @@ with tab_observations:
     st.markdown("#### Carga de observaciones")
     st.caption(
         "Admite FECHA + PLM2 (flujo por intervalo) o FECHA + "
-        "EMERGENCIA_ACUMULADA/OBSERVADO (0–1 o 0–100 %)."
+        "EMERGENCIA_ACUMULADA/OBSERVADO (0–1 o 0–100 %). También reconoce "
+        "tres repeticiones (1, 2, 3) y una columna media por m²."
     )
     uploaded_observations = st.file_uploader(
         "Archivo de emergencia observada",
@@ -262,7 +263,7 @@ with tab_observations:
         ],
     )
     upload_uncertainty_pct = upload_columns[1].number_input(
-        "Incertidumbre de la carga (%)",
+        "Incertidumbre si no hay repeticiones (%)",
         min_value=1.0,
         max_value=30.0,
         value=8.0,
@@ -290,7 +291,8 @@ with tab_observations:
                 f'Modo detectado: {import_metadata["modo"]}.'
             )
             if import_metadata["modo"] == "flujo":
-                summary_columns = st.columns(3)
+                has_repetitions = "n_repeticiones" in import_metadata
+                summary_columns = st.columns(4 if has_repetitions else 3)
                 summary_columns[0].metric(
                     "Total observado",
                     f'{import_metadata["total_observado_plm2"]:.1f} plantas/m²',
@@ -303,7 +305,22 @@ with tab_observations:
                     "Progreso simulado en última fecha",
                     f'{import_metadata["progreso_modelo_ultima_fecha"]:.0%}',
                 )
+                if has_repetitions:
+                    summary_columns[3].metric(
+                        "Repeticiones",
+                        f'{import_metadata["n_repeticiones"]} por fecha',
+                    )
                 st.caption(import_metadata["metodo_normalizacion"].capitalize() + ".")
+                if has_repetitions:
+                    factor = import_metadata["factor_conversion_repeticiones"]
+                    area = import_metadata["area_cuadrante_inferida_m2"]
+                    st.info(
+                        f"Repeticiones detectadas automáticamente. Factor de conversión "
+                        f"a m²: ×{factor:.2f} (área inferida: {area:.2f} m²). "
+                        f"Incertidumbre: {import_metadata['metodo_incertidumbre']} "
+                        f"({import_metadata['incertidumbre_minima']:.1%}–"
+                        f"{import_metadata['incertidumbre_maxima']:.1%})."
+                    )
 
             preview_columns = [
                 "Fecha",
@@ -314,6 +331,14 @@ with tab_observations:
             ]
             if "Acumulado_PLM2" in prepared_observations:
                 preview_columns.insert(2, "Acumulado_PLM2")
+            repetition_preview = [
+                column
+                for column in prepared_observations.columns
+                if column.startswith("Repeticion_")
+                and column.endswith("_original")
+            ]
+            if repetition_preview:
+                preview_columns[2:2] = repetition_preview + ["EE_repeticiones_PLM2"]
             st.dataframe(
                 prepared_observations[preview_columns],
                 hide_index=True,
