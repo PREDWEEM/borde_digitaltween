@@ -87,17 +87,72 @@ def calculate_et0_hargreaves(jday, tmax, tmin, latitude=-37.761671):
     return np.maximum(0.0023 * ra_mm * (tmean + 17.8) * np.sqrt(trange), 0)
 
 
-def surface_parameters(coverage_pct: float) -> tuple[float, float]:
-    coverage = float(np.clip(coverage_pct, 0.0, 100.0))
+def surface_parameters(coverage_pct):
+    """Convierte cobertura escalar o diaria en parámetros de superficie."""
+    coverage = np.clip(np.asarray(coverage_pct, dtype=float), 0.0, 100.0)
     points = [0.0, 30.0, 70.0, 100.0]
-    ke_soil = float(np.interp(coverage, points, [0.85, 0.50, 0.25, 0.10]))
-    thermal_modulator = float(np.interp(coverage, points, [0.95, 0.90, 0.85, 0.80]))
+    ke_soil = np.interp(coverage, points, [0.85, 0.50, 0.25, 0.10])
+    thermal_modulator = np.interp(
+        coverage, points, [0.95, 0.90, 0.85, 0.80]
+    )
+    if coverage.ndim == 0:
+        return float(ke_soil), float(thermal_modulator)
     return ke_soil, thermal_modulator
+
+
+def daily_coverage(
+    dates: pd.Series,
+    default_coverage_pct: float,
+    coverage_series: pd.DataFrame | None = None,
+) -> np.ndarray:
+    """Interpola cobertura entre mediciones y conserva el último valor.
+
+    Antes de la primera medición se usa el valor constante configurado. Luego
+    de la última se mantiene la última cobertura observada.
+    """
+    model_dates = pd.to_datetime(dates, errors="coerce").dt.tz_localize(None)
+    default = float(np.clip(default_coverage_pct, 0.0, 100.0))
+    if coverage_series is None or coverage_series.empty:
+        return np.full(len(model_dates), default, dtype=float)
+
+    observed = coverage_series.copy()
+    if not {"Fecha", "Cobertura_PCT"}.issubset(observed.columns):
+        raise ValueError("La cobertura observada requiere Fecha y Cobertura_PCT.")
+    observed["Fecha"] = pd.to_datetime(
+        observed["Fecha"], errors="coerce"
+    ).dt.tz_localize(None)
+    observed["Cobertura_PCT"] = pd.to_numeric(
+        observed["Cobertura_PCT"], errors="coerce"
+    )
+    observed = (
+        observed.dropna(subset=["Fecha", "Cobertura_PCT"])
+        .sort_values("Fecha")
+        .drop_duplicates("Fecha", keep="last")
+    )
+    if observed.empty:
+        return np.full(len(model_dates), default, dtype=float)
+    if not observed["Cobertura_PCT"].between(0.0, 100.0).all():
+        raise ValueError("Cobertura_PCT debe estar comprendida entre 0 y 100.")
+
+    model_axis = model_dates.astype("int64").to_numpy(dtype=float)
+    observed_axis = observed["Fecha"].astype("int64").to_numpy(dtype=float)
+    return np.interp(
+        model_axis,
+        observed_axis,
+        observed["Cobertura_PCT"].to_numpy(float),
+        left=default,
+        right=float(observed["Cobertura_PCT"].iloc[-1]),
+    )
 
 
 def surface_water_balance(prec, et0, w_max=20.0, ke_soil=0.4, kr_exponent=0.0):
     prec = np.asarray(prec, dtype=float)
     et0 = np.asarray(et0, dtype=float)
+    daily_ke = np.asarray(ke_soil, dtype=float)
+    if daily_ke.ndim == 0:
+        daily_ke = np.full(len(prec), float(daily_ke), dtype=float)
+    if len(daily_ke) != len(prec):
+        raise ValueError("Ke_Suelo debe ser escalar o tener un valor por día.")
     if w_max <= 0:
         raise ValueError("Wmax debe ser mayor que cero.")
     water = np.zeros(len(prec), dtype=float)
@@ -111,7 +166,7 @@ def surface_water_balance(prec, et0, w_max=20.0, ke_soil=0.4, kr_exponent=0.0):
         kr = 1.0 if exponent == 0.0 else water_fraction**exponent
         daily_kr[i] = kr
         water[i] = np.clip(
-            water[i - 1] + prec[i] - et0[i] * float(ke_soil) * kr,
+            water[i - 1] + prec[i] - et0[i] * daily_ke[i] * kr,
             0.0,
             float(w_max),
         )
@@ -153,13 +208,33 @@ def _clean_weather(weather: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def run_predweem(weather: pd.DataFrame, model: PracticalANNModel, params: ModelParameters) -> pd.DataFrame:
+def run_predweem(
+    weather: pd.DataFrame,
+    model: PracticalANNModel,
+    params: ModelParameters,
+    coverage_series: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Ejecuta PREDWEEM y devuelve una trayectoria diaria auditable."""
     df = _clean_weather(weather)
     df["Julian_days"] = df["Fecha"].dt.dayofyear
-    ke_soil, thermal_modulator = surface_parameters(params.cobertura_pct)
-    df["Cobertura_Rastrojo"] = params.cobertura_pct
+    df["Cobertura_Rastrojo"] = daily_coverage(
+        df["Fecha"], params.cobertura_pct, coverage_series
+    )
+    ke_soil, thermal_modulator = surface_parameters(df["Cobertura_Rastrojo"])
     df["Ke_Suelo"] = ke_soil
+    df["Modulador_Termico_Cobertura"] = thermal_modulator
+    df["Cobertura_Modo"] = (
+        "serie observada interpolada"
+        if coverage_series is not None and not coverage_series.empty
+        else "constante"
+    )
+    if coverage_series is not None and not coverage_series.empty:
+        observed_coverage_dates = pd.to_datetime(
+            coverage_series["Fecha"], errors="coerce"
+        ).dt.tz_localize(None)
+        df["Cobertura_Observada"] = df["Fecha"].isin(observed_coverage_dates)
+    else:
+        df["Cobertura_Observada"] = False
     df["Exponente_Kr"] = params.exponente_kr
 
     df["Tmedia_aire"] = (df["TMAX"] + df["TMIN"]) / 2.0
@@ -236,4 +311,3 @@ def run_predweem(weather: pd.DataFrame, model: PracticalANNModel, params: ModelP
         df["TT_DESDE_PICO"] = 0.0
         df.loc[first_peak_index:, "TT_DESDE_PICO"] = df.loc[first_peak_index:, "DG"].cumsum()
     return df
-

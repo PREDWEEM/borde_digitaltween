@@ -62,6 +62,7 @@ escalar anterior como modo de compatibilidad. No se reentrena la ANN.
 - meteorología operativa INTA Bordenave + ECMWF;
 - alternativa georreferenciada de Open-Meteo;
 - carga de meteorología CSV/XLSX;
+- cobertura del rastrojo constante o serie observada `FECHA + COBERTURA_PCT`;
 - estado persistente por identificador de lote en SQLite;
 - asimilación directa de conteos por intervalo con incertidumbre;
 - carga masiva de observaciones CSV/XLS/XLSX en formato `FECHA + PLM2` o
@@ -70,6 +71,24 @@ escalar anterior como modo de compatibilidad. No se reentrena la ANN.
 - escenarios contrafactuales de lluvia y temperatura;
 - fechas d25, d50, d75 y d95;
 - exportación CSV de la trayectoria completa y auditable.
+
+## Cobertura variable del rastrojo
+
+La interfaz permite seleccionar **Constante** o **Serie observada**. La serie
+observada se carga por lote en CSV/XLS/XLSX con esta estructura:
+
+| FECHA | COBERTURA_PCT |
+|---|---:|
+| 2026-03-01 | 82 |
+| 2026-03-15 | 70 |
+
+Los valores deben estar entre 0 y 100. El gemelo interpola linealmente entre
+mediciones. Antes de la primera utiliza la cobertura de respaldo configurada en
+la barra lateral y, después de la última, conserva el último valor observado.
+La cobertura diaria actualiza `Ke_Suelo` y el balance hídrico que condiciona el
+flujo de emergencia. También actualiza las temperaturas superficiales estimadas
+mediante el modulador térmico, sin modificar las entradas originales de la ANN.
+Las mediciones quedan guardadas de forma independiente para cada lote.
 
 ## Ejecución local
 

@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS snapshots (
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS coverage_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    coverage_pct REAL NOT NULL CHECK(coverage_pct BETWEEN 0 AND 100),
+    source_name TEXT NOT NULL DEFAULT 'Archivo cargado',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(site_id, observed_at)
+);
 """
 
 
@@ -230,6 +239,69 @@ class TwinStore:
             cursor = connection.execute(
                 f"""
                 DELETE FROM observations
+                WHERE site_id=? AND observed_at IN ({placeholders})
+                """,
+                (site_id, *dates),
+            )
+            return int(cursor.rowcount)
+
+    def upsert_coverage_observations(
+        self, site_id: str, coverage: pd.DataFrame
+    ) -> None:
+        """Guarda mediciones fechadas de cobertura para un lote."""
+        rows = [
+            (
+                site_id,
+                pd.Timestamp(row["Fecha"]).date().isoformat(),
+                float(row["Cobertura_PCT"]),
+                str(row.get("Fuente", "Archivo cargado")),
+            )
+            for _, row in coverage.iterrows()
+        ]
+        with self.connect() as connection:
+            connection.executemany(
+                """
+                INSERT INTO coverage_observations(
+                    site_id, observed_at, coverage_pct, source_name
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(site_id, observed_at) DO UPDATE SET
+                    coverage_pct=excluded.coverage_pct,
+                    source_name=excluded.source_name,
+                    created_at=CURRENT_TIMESTAMP
+                """,
+                rows,
+            )
+
+    def coverage_observations(self, site_id: str) -> pd.DataFrame:
+        """Recupera la serie de cobertura observada de un lote."""
+        with self.connect() as connection:
+            return pd.read_sql_query(
+                """
+                SELECT observed_at AS Fecha, coverage_pct AS Cobertura_PCT,
+                       source_name AS Fuente, created_at AS Registrado
+                FROM coverage_observations
+                WHERE site_id=? ORDER BY observed_at
+                """,
+                connection,
+                params=(site_id,),
+                parse_dates=["Fecha", "Registrado"],
+            )
+
+    def delete_coverage_observations(self, site_id: str, observed_dates) -> int:
+        """Borra mediciones explícitas de cobertura para un lote."""
+        dates = sorted(
+            {
+                pd.Timestamp(observed_at).date().isoformat()
+                for observed_at in observed_dates
+            }
+        )
+        if not dates:
+            return 0
+        placeholders = ", ".join("?" for _ in dates)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                f"""
+                DELETE FROM coverage_observations
                 WHERE site_id=? AND observed_at IN ({placeholders})
                 """,
                 (site_id, *dates),

@@ -12,6 +12,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from predweem_twin.assimilation import assimilate_observations
+from predweem_twin.coverage import prepare_coverage_series, read_coverage_file
 from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
 from predweem_twin.observations import prepare_observations, read_observation_file
 from predweem_twin.scenarios import apply_scenario
@@ -157,7 +158,17 @@ with st.sidebar:
     uploaded_weather = None
     if source_option == "Cargar archivo":
         uploaded_weather = st.file_uploader("CSV o Excel", type=["csv", "xlsx", "xls"])
-    coverage = st.slider("Cobertura de rastrojo (%)", 0, 100, 50, 5)
+    coverage_mode = st.radio(
+        "Cobertura de rastrojo",
+        ["Constante", "Serie observada"],
+        help=(
+            "La serie observada se carga por lote con las columnas "
+            "FECHA + COBERTURA_PCT."
+        ),
+    )
+    coverage = st.slider(
+        "Cobertura constante o de respaldo (%)", 0, 100, 50, 5
+    )
     w_max = st.slider("Agua superficial Wmax (mm)", 10.0, 36.0, 18.8, 0.5)
     model_uncertainty = st.slider("Incertidumbre del modelo", 0.03, 0.30, 0.12, 0.01)
     seasonal_potential_input = st.number_input(
@@ -200,7 +211,32 @@ parameters = ModelParameters(
 )
 model = load_model()
 store = load_store()
-base_trajectory = run_predweem(weather, model, parameters)
+coverage_observations = store.coverage_observations(site_id)
+active_coverage = coverage_observations[
+    pd.to_datetime(coverage_observations["Fecha"], errors="coerce")
+    <= pd.Timestamp(as_of)
+].copy()
+coverage_series_for_model = (
+    active_coverage
+    if coverage_mode == "Serie observada" and not active_coverage.empty
+    else None
+)
+if coverage_mode == "Serie observada" and active_coverage.empty:
+    st.sidebar.warning(
+        "No hay cobertura observada disponible hasta esta fecha. "
+        "Se utiliza el valor de respaldo."
+    )
+base_trajectory = run_predweem(
+    weather,
+    model,
+    parameters,
+    coverage_series=coverage_series_for_model,
+)
+coverage_at_cutoff = float(
+    base_trajectory.loc[
+        base_trajectory["Fecha"] <= pd.Timestamp(as_of), "Cobertura_Rastrojo"
+    ].iloc[-1]
+)
 observations = store.observations(site_id)
 active_observations = observations[
     pd.to_datetime(observations["Fecha"], errors="coerce") <= pd.Timestamp(as_of)
@@ -230,6 +266,13 @@ if snapshot["last_observation_date"]:
         "Estado actualizado con flujos de campo hasta "
         f'**{pd.Timestamp(snapshot["last_observation_date"]).strftime("%d/%m/%Y")}**. '
         "Desde esa fecha se proyecta con el flujo diario de PREDWEEM."
+    )
+if coverage_series_for_model is not None:
+    last_coverage = active_coverage.iloc[-1]
+    st.caption(
+        "Cobertura variable activa con mediciones hasta "
+        f'**{pd.Timestamp(last_coverage["Fecha"]).strftime("%d/%m/%Y")}**; '
+        "los días intermedios se interpolan y luego se mantiene el último valor."
     )
 
 metric_columns = st.columns(5)
@@ -474,6 +517,100 @@ with tab_observations:
                 st.success(f"Se borraron {deleted} observación(es) del lote {site_id}.")
                 st.rerun()
 
+    st.divider()
+    st.markdown("#### Cobertura observada del rastrojo")
+    st.caption(
+        "Cargue un CSV o Excel con las columnas FECHA + COBERTURA_PCT. "
+        "Los valores deben estar entre 0 y 100."
+    )
+    uploaded_coverage = st.file_uploader(
+        "Archivo de cobertura",
+        type=["xlsx", "xls", "csv", "tsv"],
+        key="observed_coverage_upload",
+    )
+    if uploaded_coverage is not None:
+        try:
+            raw_coverage, coverage_file_metadata = read_coverage_file(
+                uploaded_coverage
+            )
+            prepared_coverage, coverage_import_metadata = prepare_coverage_series(
+                raw_coverage,
+                minimum_date=weather_dates.min(),
+                maximum_date=weather_dates.max(),
+                source_name=(
+                    f'{coverage_file_metadata["archivo"]} · '
+                    f'hoja {coverage_file_metadata["hoja"]}'
+                ),
+            )
+            st.success(
+                f'{coverage_import_metadata["filas"]} mediciones válidas; '
+                f'rango {coverage_import_metadata["cobertura_minima"]:.0f}–'
+                f'{coverage_import_metadata["cobertura_maxima"]:.0f} %.'
+            )
+            st.dataframe(
+                prepared_coverage,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Cobertura_PCT": st.column_config.NumberColumn(
+                        "Cobertura (%)", min_value=0, max_value=100, format="%.1f %%"
+                    )
+                },
+            )
+            if st.button(
+                "Incorporar serie de cobertura",
+                type="primary",
+                key="save_coverage_upload",
+            ):
+                store.upsert_coverage_observations(site_id, prepared_coverage)
+                st.success(
+                    f'Se incorporaron {len(prepared_coverage)} mediciones de cobertura '
+                    f'al lote {site_id}.'
+                )
+                st.rerun()
+        except Exception as error:
+            st.error(f"No fue posible procesar la cobertura: {error}")
+
+    if coverage_observations.empty:
+        st.info("No hay mediciones de cobertura guardadas para este lote.")
+    else:
+        st.dataframe(
+            coverage_observations,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Cobertura_PCT": st.column_config.NumberColumn(
+                    "Cobertura (%)", min_value=0, max_value=100, format="%.1f %%"
+                )
+            },
+        )
+        with st.expander("Borrar mediciones de cobertura"):
+            coverage_dates = coverage_observations["Fecha"].dt.date.tolist()
+            selected_coverage_dates = st.multiselect(
+                "Fechas de cobertura que desea borrar",
+                options=coverage_dates,
+                format_func=lambda value: value.strftime("%d/%m/%Y"),
+                key="coverage_dates_to_delete",
+            )
+            confirm_coverage_deletion = st.checkbox(
+                f"Confirmo que deseo borrar {len(selected_coverage_dates)} "
+                "medición(es) de cobertura.",
+                value=False,
+                key="confirm_coverage_deletion",
+            )
+            if st.button(
+                "Borrar cobertura seleccionada",
+                disabled=(
+                    not selected_coverage_dates or not confirm_coverage_deletion
+                ),
+                key="delete_selected_coverage",
+            ):
+                deleted = store.delete_coverage_observations(
+                    site_id, selected_coverage_dates
+                )
+                st.success(f"Se borraron {deleted} medición(es) de cobertura.")
+                st.rerun()
+
 with tab_scenarios:
     st.subheader("¿Qué pasa si…?")
     scenario_columns = st.columns(3)
@@ -481,7 +618,12 @@ with tab_scenarios:
     rain_days = scenario_columns[1].slider("Distribuida en días", 1, 7, 3)
     temperature_delta = scenario_columns[2].slider("Cambio de temperatura (°C)", -5.0, 5.0, 0.0, 0.5)
     scenario_weather = apply_scenario(weather, as_of, extra_rain, rain_days, temperature_delta)
-    scenario_base = run_predweem(scenario_weather, model, parameters)
+    scenario_base = run_predweem(
+        scenario_weather,
+        model,
+        parameters,
+        coverage_series=coverage_series_for_model,
+    )
     scenario_twin, _ = assimilate_observations(
         scenario_base,
         active_observations,
@@ -523,7 +665,13 @@ with tab_audit:
                 "Observaciones asimiladas",
             ],
             "Valor": [
-                site_id, source_label, f"{coverage} %", f"{w_max:.1f} mm",
+                site_id, source_label,
+                (
+                    f"Serie observada; {coverage_at_cutoff:.1f} % al corte"
+                    if coverage_series_for_model is not None
+                    else f"Constante {coverage} %"
+                ),
+                f"{w_max:.1f} mm",
                 f"{model_uncertainty:.0%}",
                 f"{seasonal_potential_prior:.1f} plantas/m²"
                 if seasonal_potential_prior is not None else "Automático",
@@ -540,7 +688,10 @@ with tab_audit:
         "Fecha", "TMAX", "TMIN", "Prec", "EMERREL", "EMERAC_NORMALIZADA",
         "EMERREL_TWIN", "EMERAC_TWIN", "W_superficial", "Humedad_Relativa",
         "EMERREL_TWIN_PLM2", "EMERAC_TWIN_PLM2", "POTENCIAL_ESTACIONAL_PLM2",
-        "MODO_ASIMILACION", "ULTIMA_OBSERVACION", "Termoinhibida", "TT_DESDE_PICO",
+        "MODO_ASIMILACION", "ULTIMA_OBSERVACION", "Cobertura_Rastrojo",
+        "Cobertura_Modo", "Cobertura_Observada", "Ke_Suelo",
+        "Modulador_Termico_Cobertura",
+        "Termoinhibida", "TT_DESDE_PICO",
     ]
     st.download_button(
         "Descargar trayectoria auditable (CSV)",
