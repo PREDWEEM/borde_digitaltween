@@ -20,9 +20,16 @@ from predweem_twin.coverage import (
 from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
 from predweem_twin.observations import prepare_observations, read_observation_file
 from predweem_twin.scenarios import apply_scenario
+from predweem_twin.seasonal import load_seasonal_reference
 from predweem_twin.state import build_twin_snapshot, milestone_dates
 from predweem_twin.storage import TwinStore
-from predweem_twin.weather import fetch_open_meteo, read_weather_file, weather_source_label
+from predweem_twin.weather import (
+    fetch_open_meteo,
+    last_observed_weather_date,
+    operational_weather_window,
+    read_weather_file,
+    weather_source_label,
+)
 
 
 BASE = Path(__file__).parent
@@ -52,6 +59,11 @@ st.markdown(
 @st.cache_resource
 def load_model():
     return PracticalANNModel.from_directory(BASE / "models")
+
+
+@st.cache_data(show_spinner=False)
+def load_progress_reference():
+    return load_seasonal_reference(BASE / "models" / "modelo_clusters_k3.pkl")
 
 
 def load_store():
@@ -124,6 +136,16 @@ def trajectory_chart(df, observations, as_of, audit=None):
             secondary_y=False,
         )
     figure.add_vline(x=pd.Timestamp(as_of).timestamp() * 1000, line_color="#162f25", line_dash="dash")
+    forecast_start = pd.Timestamp(as_of) + pd.Timedelta(days=1)
+    if pd.Timestamp(df["Fecha"].max()) >= forecast_start:
+        figure.add_vrect(
+            x0=forecast_start,
+            x1=pd.Timestamp(df["Fecha"].max()),
+            fillcolor="rgba(223,127,52,.10)",
+            line_width=0,
+            annotation_text="Pronóstico 7 días",
+            annotation_position="top left",
+        )
     figure.update_yaxes(title_text="Emergencia acumulada (%)", range=[0, 105], secondary_y=False)
     figure.update_yaxes(title_text="Flujo diario (%)", rangemode="tozero", secondary_y=True)
     figure.update_layout(
@@ -201,11 +223,23 @@ except Exception as error:
     st.error(f"No fue posible cargar la meteorología: {error}")
     st.stop()
 
-weather_dates = pd.to_datetime(weather["Fecha"] if "Fecha" in weather else weather["FECHA"], errors="coerce")
+weather_date_column = "Fecha" if "Fecha" in weather else "FECHA"
+weather_dates = pd.to_datetime(weather[weather_date_column], errors="coerce")
 min_date = weather_dates.min().date()
 max_date = weather_dates.max().date()
-default_date = min(max(date.today(), min_date), max_date)
-as_of = st.sidebar.date_input("Fecha del estado", value=default_date, min_value=min_date, max_value=max_date)
+last_observed_date = pd.Timestamp(last_observed_weather_date(weather)).date()
+max_state_date = min(last_observed_date, max_date)
+default_date = min(max(date.today(), min_date), max_state_date)
+as_of = st.sidebar.date_input(
+    "Fecha del estado",
+    value=default_date,
+    min_value=min_date,
+    max_value=max_state_date,
+)
+weather, forecast_metadata = operational_weather_window(
+    weather, as_of=as_of, forecast_days=7
+)
+weather_dates = pd.to_datetime(weather[weather_date_column], errors="coerce")
 
 parameters = ModelParameters(
     cobertura_pct=float(coverage),
@@ -214,6 +248,7 @@ parameters = ModelParameters(
     longitud=float(longitude),
 )
 model = load_model()
+seasonal_reference = load_progress_reference()
 store = load_store()
 coverage_observations = store.coverage_observations(site_id)
 active_coverage = coverage_observations[
@@ -235,6 +270,8 @@ base_trajectory = run_predweem(
     model,
     parameters,
     coverage_series=coverage_series_for_model,
+    normalization_as_of=as_of,
+    seasonal_reference=seasonal_reference,
 )
 coverage_at_cutoff = float(
     base_trajectory.loc[
@@ -265,6 +302,21 @@ st.markdown(
     f'<span class="status-pill">● ACTUALIZADO AL {pd.Timestamp(snapshot["as_of"]).strftime("%d/%m/%Y")}</span>',
     unsafe_allow_html=True,
 )
+forecast_end_label = (
+    pd.Timestamp(forecast_metadata["forecast_end"]).strftime("%d/%m/%Y")
+    if forecast_metadata["forecast_end"] is not None
+    else "sin pronóstico"
+)
+st.caption(
+    f'Meteorología observada hasta **{pd.Timestamp(as_of).strftime("%d/%m/%Y")}** · '
+    f'pronóstico disponible: **{forecast_metadata["forecast_days_available"]}/7 días** '
+    f'(hasta {forecast_end_label}).'
+)
+if not forecast_metadata["complete"]:
+    st.warning(
+        "El horizonte meteorológico está incompleto. Los indicadores futuros "
+        "se calculan solamente con los días disponibles."
+    )
 if snapshot["last_observation_date"]:
     st.caption(
         "Estado actualizado con flujos de campo hasta "
@@ -676,6 +728,8 @@ with tab_scenarios:
         model,
         parameters,
         coverage_series=coverage_series_for_model,
+        normalization_as_of=as_of,
+        seasonal_reference=seasonal_reference,
     )
     scenario_twin, _ = assimilate_observations(
         scenario_base,
@@ -713,12 +767,15 @@ with tab_audit:
     audit_summary = pd.DataFrame(
         {
             "Variable": [
-                "Lote", "Fuente meteorológica", "Cobertura", "Wmax",
+                "Lote", "Fuente meteorológica", "Corte meteorológico",
+                "Horizonte pronosticado", "Cobertura", "Wmax",
                 "Incertidumbre modelo", "Potencial previo", "Modo de asimilación",
                 "Observaciones asimiladas",
             ],
             "Valor": [
                 site_id, source_label,
+                pd.Timestamp(as_of).strftime("%d/%m/%Y"),
+                f'{forecast_metadata["forecast_days_available"]}/7 días',
                 (
                     f"Serie observada; {coverage_at_cutoff:.1f} % al corte"
                     if coverage_series_for_model is not None
@@ -738,13 +795,20 @@ with tab_audit:
     else:
         st.dataframe(assimilation_audit, hide_index=True, width="stretch")
     export_columns = [
-        "Fecha", "TMAX", "TMIN", "Prec", "EMERREL", "EMERAC_NORMALIZADA",
+        "Fecha", "TMAX", "TMIN", "Prec", "FUENTE", "TIPODATO",
+        "EMERREL", "EMERAC_NORMALIZADA",
         "EMERREL_TWIN", "EMERAC_TWIN", "W_superficial", "Humedad_Relativa",
         "EMERREL_TWIN_PLM2", "EMERAC_TWIN_PLM2", "POTENCIAL_ESTACIONAL_PLM2",
         "MODO_ASIMILACION", "ULTIMA_OBSERVACION", "Cobertura_Rastrojo",
         "Cobertura_Modo", "Cobertura_Observada", "Ke_Suelo",
         "Modulador_Termico_Cobertura",
+        "Normalizacion_Modo", "Total_EMERREL_Referencia",
+        "Progreso_Estacional_P10", "Progreso_Estacional_Referencia",
+        "Progreso_Estacional_P90",
         "Termoinhibida", "TT_DESDE_PICO",
+    ]
+    export_columns = [
+        column for column in export_columns if column in twin_trajectory.columns
     ]
     st.download_button(
         "Descargar trayectoria auditable (CSV)",

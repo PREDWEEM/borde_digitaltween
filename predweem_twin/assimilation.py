@@ -209,9 +209,7 @@ def _assimilate_interval_flows(
     observed_flows: list[float] = []
     previous_base_state = 0.0
     previous_idx = -1
-    previous_posterior = 0.0
-    audit = []
-    final_potential = np.nan
+    records = []
 
     for row in obs.itertuples(index=False):
         valid_indices = df.index[df["Fecha"] <= row.Fecha].tolist()
@@ -225,15 +223,29 @@ def _assimilate_interval_flows(
         base_interval = max(0.0, base_state - previous_base_state)
         model_intervals.append(base_interval)
         observed_flows.append(float(row.Flujo_observado_PLM2))
-        potential_info = estimate_flow_potential(
-            model_intervals,
-            observed_flows,
-            base_state,
-            seasonal_potential_prior=seasonal_potential_prior,
-            potential_prior_cv=potential_prior_cv,
-        )
-        potential = potential_info["potential"]
-        final_potential = potential
+        records.append((row, idx, base_interval))
+        previous_idx = idx
+        previous_base_state = base_state
+
+    if not records:
+        return df, pd.DataFrame()
+
+    final_base_state = float(base_cumulative[records[-1][1]])
+    potential_info = estimate_flow_potential(
+        model_intervals,
+        observed_flows,
+        final_base_state,
+        seasonal_potential_prior=seasonal_potential_prior,
+        potential_prior_cv=potential_prior_cv,
+    )
+    final_potential = potential_info["potential"]
+    previous_idx = -1
+    previous_posterior = 0.0
+    cumulative_observed = 0.0
+    audit = []
+
+    for row, idx, base_interval in records:
+        potential = final_potential
         observed_flow_fraction = float(row.Flujo_observado_PLM2) / potential
 
         prior_state = float(df.at[idx, "EMERAC_TWIN"])
@@ -272,9 +284,8 @@ def _assimilate_interval_flows(
         )
         _reanchor_future(df, idx, posterior)
 
-        field_state = float(
-            np.clip(potential_info["observed_total"] / potential, 0.0, 1.0)
-        )
+        cumulative_observed += float(row.Flujo_observado_PLM2)
+        field_state = float(np.clip(cumulative_observed / potential, 0.0, 1.0))
         audit.append(
             {
                 "Modo_asimilacion": "flujo por intervalo",
@@ -284,7 +295,7 @@ def _assimilate_interval_flows(
                 "Flujo_modelo_fraccion": base_interval,
                 "Flujo_previo_fraccion": prior_interval,
                 "Flujo_observado_fraccion": observed_flow_fraction,
-                "Acumulado_observado_PLM2": potential_info["observed_total"],
+                "Acumulado_observado_PLM2": cumulative_observed,
                 "Potencial_estacional_PLM2": potential,
                 "CV_potencial": potential_info["potential_cv"],
                 "Calidad_ajuste_flujos": potential_info["fit_quality"],
@@ -298,7 +309,6 @@ def _assimilate_interval_flows(
         )
         previous_idx = idx
         previous_posterior = posterior
-        previous_base_state = base_state
 
     df["EMERAC_TWIN"] = np.maximum.accumulate(
         np.clip(df["EMERAC_TWIN"].to_numpy(float), 0.0, 1.0)
@@ -311,7 +321,7 @@ def _assimilate_interval_flows(
         df["EMERAC_TWIN_PLM2"] = df["EMERAC_TWIN"] * final_potential
         df["EMERREL_TWIN_PLM2"] = df["EMERREL_TWIN"] * final_potential
     df["MODO_ASIMILACION"] = "flujos por intervalo"
-    df["ULTIMA_OBSERVACION"] = obs["Fecha"].max()
+    df["ULTIMA_OBSERVACION"] = max(row.Fecha for row, _, _ in records)
     return df, pd.DataFrame(audit)
 
 

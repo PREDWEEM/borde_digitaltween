@@ -9,6 +9,74 @@ import pandas as pd
 import requests
 
 
+def _weather_date_column(frame: pd.DataFrame) -> str:
+    for column in frame.columns:
+        if str(column).strip().lower() in {"fecha", "date", "datetime"}:
+            return column
+    raise ValueError("La meteorología requiere una columna Fecha.")
+
+
+def forecast_mask(frame: pd.DataFrame) -> pd.Series:
+    """Identifica filas explícitamente marcadas como pronóstico."""
+    type_column = next(
+        (
+            column
+            for column in frame.columns
+            if str(column).strip().lower() in {"tipodato", "tipo_dato", "data_type"}
+        ),
+        None,
+    )
+    if type_column is None:
+        return pd.Series(False, index=frame.index)
+    labels = frame[type_column].astype(str).str.lower()
+    return labels.str.contains("pronost|forecast", regex=True, na=False)
+
+
+def last_observed_weather_date(frame: pd.DataFrame):
+    """Devuelve la última fecha que no está marcada como pronóstico."""
+    date_column = _weather_date_column(frame)
+    dates = pd.to_datetime(frame[date_column], errors="coerce").dt.tz_localize(None)
+    observed = dates[~forecast_mask(frame) & dates.notna()]
+    if observed.empty:
+        valid = dates.dropna()
+        if valid.empty:
+            raise ValueError("No hay fechas meteorológicas válidas.")
+        return valid.max()
+    return observed.max()
+
+
+def operational_weather_window(
+    frame: pd.DataFrame,
+    as_of=None,
+    forecast_days: int = 7,
+) -> tuple[pd.DataFrame, dict]:
+    """Recorta la meteorología al estado observado más siete días."""
+    if int(forecast_days) < 1:
+        raise ValueError("El horizonte de pronóstico debe ser al menos un día.")
+    date_column = _weather_date_column(frame)
+    prepared = frame.copy()
+    prepared[date_column] = pd.to_datetime(
+        prepared[date_column], errors="coerce"
+    ).dt.tz_localize(None)
+    prepared = prepared.dropna(subset=[date_column]).sort_values(date_column)
+    cutoff = (
+        pd.Timestamp(as_of).tz_localize(None).normalize()
+        if as_of is not None
+        else pd.Timestamp(last_observed_weather_date(prepared)).normalize()
+    )
+    horizon_end = cutoff + pd.Timedelta(days=int(forecast_days))
+    window = prepared[prepared[date_column] <= horizon_end].copy()
+    future_dates = window.loc[window[date_column] > cutoff, date_column].drop_duplicates()
+    available = int(len(future_dates))
+    return window.reset_index(drop=True), {
+        "as_of": cutoff,
+        "forecast_end": future_dates.max() if available else None,
+        "forecast_days_requested": int(forecast_days),
+        "forecast_days_available": min(available, int(forecast_days)),
+        "complete": available >= int(forecast_days),
+    }
+
+
 def read_weather_file(source) -> pd.DataFrame:
     if hasattr(source, "name"):
         suffix = Path(source.name).suffix.lower()
@@ -69,6 +137,12 @@ def fetch_open_meteo(latitude: float, longitude: float, start_date, forecast_day
                 "TipoDato": data_type,
             }
         )
+        if data_type == "Pronostico":
+            frame_dates = pd.to_datetime(frame["Fecha"]).dt.date
+            frame["TipoDato"] = [
+                "Provisional" if value < today else "Pronostico"
+                for value in frame_dates
+            ]
         frames.append(frame)
     return (
         pd.concat(frames, ignore_index=True)
@@ -84,4 +158,3 @@ def weather_source_label(df: pd.DataFrame) -> str:
         return "Archivo aportado"
     sources = [str(value) for value in df["Fuente"].dropna().unique()]
     return " + ".join(sources[:3]) if sources else "Archivo aportado"
-

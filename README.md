@@ -57,6 +57,31 @@ cada corrección, la curva futura se reancla sobre la fracción aún no emergida
 Los archivos que ya contienen acumulados normalizados mantienen el método
 escalar anterior como modo de compatibilidad. No se reentrena la ANN.
 
+## Operación con meteorología parcial
+
+El modo operativo supone que cada ejecución dispone de meteorología observada
+hasta la fecha del estado y de un pronóstico para los siete días siguientes:
+
+```text
+1 de enero ───────── fecha del estado ───────── +7 días
+       observado/provisional            pronóstico
+```
+
+La última fila no marcada como `Pronostico` define automáticamente la fecha del
+estado. La aplicación recorta cualquier extensión posterior al séptimo día e
+informa cuántos días de pronóstico están realmente disponibles.
+
+La curva parcial no se normaliza por el total existente al final de esos siete
+días. PREDWEEM utiliza como referencia el progreso acumulado mediano de las
+campañas históricas del modelo, excluyendo 2010 y 2015, y ancla la escala en la
+fecha del estado. De esta manera, el final del pronóstico no se interpreta como
+100 % de la emergencia. Las temperaturas y precipitaciones pronosticadas
+determinan el incremento de emergencia de los siete días siguientes. Los
+conteos de campo actualizan posteriormente ese estado mediante la asimilación.
+
+Sin siete días futuros, el sistema conserva el estado disponible y muestra una
+advertencia de horizonte incompleto; no presupone que la campaña terminó.
+
 ## Funciones de la aplicación
 
 - meteorología operativa INTA Bordenave + ECMWF;

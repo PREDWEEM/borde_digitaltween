@@ -9,6 +9,7 @@ from .coverage import (
 )
 from .core import ModelParameters, PracticalANNModel, run_predweem
 from .observations import prepare_observations, read_observation_file
+from .seasonal import load_seasonal_reference
 from .state import build_twin_snapshot
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "estimate_flow_potential",
     "has_coverage_columns",
     "has_coverage_data",
+    "load_seasonal_reference",
     "prepare_coverage_series",
     "prepare_observations",
     "read_observation_file",

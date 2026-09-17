@@ -59,4 +59,6 @@ def test_interval_flows_are_assimilated_against_daily_model_sum():
     assert adjusted["EMERAC_TWIN"].between(0, 1).all()
     assert adjusted["POTENCIAL_ESTACIONAL_PLM2"].notna().all()
     assert adjusted["EMERREL_TWIN_PLM2"].notna().all()
+    assert audit["Potencial_estacional_PLM2"].nunique() == 1
+    assert audit["Acumulado_observado_PLM2"].tolist() == [20.0, 55.0]
     assert np.isclose(adjusted.iloc[-1]["EMERAC_TWIN"], 1.0)

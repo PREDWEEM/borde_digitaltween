@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .seasonal import partial_season_normalization, reference_progress
+
 
 @dataclass(frozen=True)
 class ModelParameters:
@@ -213,6 +215,8 @@ def run_predweem(
     model: PracticalANNModel,
     params: ModelParameters,
     coverage_series: pd.DataFrame | None = None,
+    normalization_as_of=None,
+    seasonal_reference: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Ejecuta PREDWEEM y devuelve una trayectoria diaria auditable."""
     df = _clean_weather(weather)
@@ -300,8 +304,34 @@ def run_predweem(
         df.loc[: first_peak_index - 1, "EMERREL"] = 0.0
 
     df["EMERAC"] = df["EMERREL"].cumsum()
-    total = float(df["EMERREL"].sum())
+    available_total = float(df["EMERREL"].sum())
+    total = available_total
+    normalization_mode = "total del período disponible"
+    normalization_metadata = {}
+    if seasonal_reference is not None and normalization_as_of is not None:
+        seasonal_total, normalization_metadata = partial_season_normalization(
+            df, normalization_as_of, seasonal_reference
+        )
+        if seasonal_total is not None:
+            total = seasonal_total
+            normalization_mode = normalization_metadata["mode"]
+        p10, median, p90 = reference_progress(
+            seasonal_reference, df["Julian_days"].to_numpy(float)
+        )
+        df["Progreso_Estacional_P10"] = p10
+        df["Progreso_Estacional_Referencia"] = median
+        df["Progreso_Estacional_P90"] = p90
+    else:
+        df["Progreso_Estacional_P10"] = np.nan
+        df["Progreso_Estacional_Referencia"] = np.nan
+        df["Progreso_Estacional_P90"] = np.nan
     df["EMERAC_NORMALIZADA"] = df["EMERAC"] / total if total > 0 else 0.0
+    df["EMERAC_NORMALIZADA"] = df["EMERAC_NORMALIZADA"].clip(0.0, 1.0)
+    df["Normalizacion_Modo"] = normalization_mode
+    df["Total_EMERREL_Referencia"] = total
+    df["Fecha_Ancla_Normalizacion"] = normalization_metadata.get(
+        "anchor_date", pd.NaT
+    )
     df["DG"] = df["Tmedia"].apply(
         lambda value: calculate_tt(value, params.t_base, params.t_opt, params.t_crit)
     )
