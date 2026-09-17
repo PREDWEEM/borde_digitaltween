@@ -154,24 +154,25 @@ def trajectory_chart(
         figure.add_vrect(
             x0=thermal_start,
             x1=displayed_thermal_end,
-            fillcolor="rgba(46,125,50,.13)",
+            fillcolor="rgba(255,193,7,.22)",
             line_width=0,
             annotation_text=(
                 f"Ventana fenológica {lower_thermal_time:.0f}–"
                 f"{upper_thermal_time:.0f} °Cd"
             ),
             annotation_position="top right",
+            annotation_font_color="#6f5200",
         )
         figure.add_vline(
             x=thermal_start.timestamp() * 1000,
-            line_color="#2e7d32",
+            line_color="#c48a00",
             line_dash="dot",
             line_width=1.5,
         )
         if thermal_end is not None:
             figure.add_vline(
                 x=thermal_end.timestamp() * 1000,
-                line_color="#2e7d32",
+                line_color="#c48a00",
                 line_dash="dot",
                 line_width=1.5,
             )

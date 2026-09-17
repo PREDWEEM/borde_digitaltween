@@ -93,7 +93,7 @@ advertencia de horizonte incompleto; no presupone que la campaña terminó.
 - carga masiva de observaciones CSV/XLS/XLSX en formato `FECHA + PLM2` o
   `FECHA + EMERGENCIA_ACUMULADA`;
 - curva PREDWEEM base frente a estado Twin actualizado;
-- ventana fenológica sombreada entre 600 y 800 °Cd desde el primer pico;
+- banda amarilla de la ventana fenológica entre 600 y 800 °Cd desde el primer pico;
 - escenarios contrafactuales de lluvia y temperatura;
 - fechas d25, d50, d75 y d95;
 - exportación CSV de la trayectoria completa y auditable.
