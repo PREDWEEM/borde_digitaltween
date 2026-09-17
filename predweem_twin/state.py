@@ -23,6 +23,10 @@ class TwinSnapshot:
     next_cohort_end: str | None
     weather_source: str
     assimilated_observations: int
+    emergence_density_plm2: float | None
+    seasonal_potential_plm2: float | None
+    last_observation_date: str | None
+    assimilation_mode: str
 
 
 def _risk(increment: float) -> str:
@@ -65,6 +69,29 @@ def build_twin_snapshot(
     future = float(df.at[future_idx, "EMERAC_TWIN"])
     increment = max(0.0, future - current)
     start, end = _next_cohort(df, idx)
+    potential_value = (
+        float(df.at[idx, "POTENCIAL_ESTACIONAL_PLM2"])
+        if "POTENCIAL_ESTACIONAL_PLM2" in df
+        and pd.notna(df.at[idx, "POTENCIAL_ESTACIONAL_PLM2"])
+        else None
+    )
+    density_value = (
+        float(df.at[idx, "EMERAC_TWIN_PLM2"])
+        if "EMERAC_TWIN_PLM2" in df
+        and pd.notna(df.at[idx, "EMERAC_TWIN_PLM2"])
+        else None
+    )
+    observation_dates = (
+        pd.to_datetime(df["ULTIMA_OBSERVACION"], errors="coerce").dropna()
+        if "ULTIMA_OBSERVACION" in df
+        else pd.Series(dtype="datetime64[ns]")
+    )
+    last_observation = observation_dates.max() if not observation_dates.empty else None
+    assimilation_mode = (
+        str(df.at[idx, "MODO_ASIMILACION"])
+        if "MODO_ASIMILACION" in df
+        else "sin observaciones"
+    )
     snapshot = TwinSnapshot(
         site_id=site_id,
         as_of=df.at[idx, "Fecha"].date().isoformat(),
@@ -80,6 +107,14 @@ def build_twin_snapshot(
         next_cohort_end=end.date().isoformat() if end is not None else None,
         weather_source=weather_source,
         assimilated_observations=int(assimilated_observations),
+        emergence_density_plm2=density_value,
+        seasonal_potential_plm2=potential_value,
+        last_observation_date=(
+            last_observation.date().isoformat()
+            if last_observation is not None and pd.notna(last_observation)
+            else None
+        ),
+        assimilation_mode=assimilation_mode,
     )
     return asdict(snapshot)
 
@@ -92,4 +127,3 @@ def milestone_dates(trajectory: pd.DataFrame) -> dict[str, str | None]:
             reached.iloc[0]["Fecha"].date().isoformat() if not reached.empty else None
         )
     return milestones
-

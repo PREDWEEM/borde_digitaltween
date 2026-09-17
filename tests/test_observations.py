@@ -81,7 +81,7 @@ def test_three_repetitions_and_mean_per_m2_are_detected():
     assert np.isclose(metadata["area_cuadrante_inferida_m2"], 0.25)
     assert prepared["Valor_original"].tolist() == [40.0, 120.0]
     assert prepared["Incertidumbre"].between(0.05, 0.30).all()
-    assert "error estándar acumulado" in metadata["metodo_incertidumbre"]
+    assert "error estándar del flujo" in metadata["metodo_incertidumbre"]
 
 
 def test_bulk_storage_preserves_original_values(tmp_path):
@@ -118,6 +118,9 @@ def test_bulk_storage_preserves_repetitions(tmp_path):
     ]
     assert stored["Factor_conversion_repeticiones"].eq(4.0).all()
     assert stored["EE_repeticiones_PLM2"].notna().all()
+    assert stored["Modo"].eq("flujo").all()
+    assert stored["Flujo_observado_PLM2"].tolist() == [40.0, 120.0]
+    assert stored["Acumulado_PLM2"].tolist() == [40.0, 160.0]
 
 
 def test_delete_observations_only_removes_selected_dates_from_active_site(tmp_path):

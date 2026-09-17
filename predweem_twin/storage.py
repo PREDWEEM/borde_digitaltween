@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS observations (
     replicates_json TEXT NOT NULL DEFAULT '',
     replicate_scale REAL,
     replicate_se_plm2 REAL,
+    observation_mode TEXT NOT NULL DEFAULT 'acumulado',
+    flow_plm2 REAL,
+    cumulative_plm2 REAL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(site_id, observed_at)
 );
@@ -52,6 +55,9 @@ class TwinStore:
                 "replicates_json": "ALTER TABLE observations ADD COLUMN replicates_json TEXT NOT NULL DEFAULT ''",
                 "replicate_scale": "ALTER TABLE observations ADD COLUMN replicate_scale REAL",
                 "replicate_se_plm2": "ALTER TABLE observations ADD COLUMN replicate_se_plm2 REAL",
+                "observation_mode": "ALTER TABLE observations ADD COLUMN observation_mode TEXT NOT NULL DEFAULT 'acumulado'",
+                "flow_plm2": "ALTER TABLE observations ADD COLUMN flow_plm2 REAL",
+                "cumulative_plm2": "ALTER TABLE observations ADD COLUMN cumulative_plm2 REAL",
             }
             for column, statement in migrations.items():
                 if column not in existing:
@@ -90,6 +96,9 @@ class TwinStore:
                     replicates_json='',
                     replicate_scale=NULL,
                     replicate_se_plm2=NULL,
+                    observation_mode='acumulado',
+                    flow_plm2=NULL,
+                    cumulative_plm2=NULL,
                     created_at=CURRENT_TIMESTAMP
                 """,
                 (
@@ -115,6 +124,9 @@ class TwinStore:
         ]
         for _, row in observations.iterrows():
             repetitions = [float(row[column]) for column in repetition_columns]
+            flow_value = row.get("Flujo_observado_PLM2")
+            cumulative_value = row.get("Acumulado_PLM2")
+            is_flow = pd.notna(flow_value)
             rows.append(
                 (
                     site_id,
@@ -132,6 +144,9 @@ class TwinStore:
                     float(row["EE_repeticiones_PLM2"])
                     if repetitions
                     else None,
+                    "flujo" if is_flow else "acumulado",
+                    float(flow_value) if is_flow else None,
+                    float(cumulative_value) if pd.notna(cumulative_value) else None,
                 )
             )
         with self.connect() as connection:
@@ -140,8 +155,9 @@ class TwinStore:
                 INSERT INTO observations(
                     site_id, observed_at, cumulative, uncertainty, note,
                     raw_value, raw_unit, source_name, replicates_json,
-                    replicate_scale, replicate_se_plm2
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    replicate_scale, replicate_se_plm2, observation_mode,
+                    flow_plm2, cumulative_plm2
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(site_id, observed_at) DO UPDATE SET
                     cumulative=excluded.cumulative,
                     uncertainty=excluded.uncertainty,
@@ -152,6 +168,9 @@ class TwinStore:
                     replicates_json=excluded.replicates_json,
                     replicate_scale=excluded.replicate_scale,
                     replicate_se_plm2=excluded.replicate_se_plm2,
+                    observation_mode=excluded.observation_mode,
+                    flow_plm2=excluded.flow_plm2,
+                    cumulative_plm2=excluded.cumulative_plm2,
                     created_at=CURRENT_TIMESTAMP
                 """,
                 rows,
@@ -159,7 +178,7 @@ class TwinStore:
 
     def observations(self, site_id: str) -> pd.DataFrame:
         with self.connect() as connection:
-            return pd.read_sql_query(
+            frame = pd.read_sql_query(
                 """
                 SELECT observed_at AS Fecha, cumulative AS Observado,
                        uncertainty AS Incertidumbre, raw_value AS Valor_original,
@@ -167,6 +186,9 @@ class TwinStore:
                        replicates_json AS Repeticiones_originales,
                        replicate_scale AS Factor_conversion_repeticiones,
                        replicate_se_plm2 AS EE_repeticiones_PLM2,
+                       observation_mode AS Modo,
+                       flow_plm2 AS Flujo_observado_PLM2,
+                       cumulative_plm2 AS Acumulado_PLM2,
                        note AS Nota, created_at AS Registrado
                 FROM observations WHERE site_id=? ORDER BY observed_at
                 """,
@@ -174,6 +196,24 @@ class TwinStore:
                 params=(site_id,),
                 parse_dates=["Fecha", "Registrado"],
             )
+        if frame.empty:
+            return frame
+        legacy_flow = frame["Unidad_original"].astype(str).str.contains(
+            "por intervalo", case=False, na=False
+        )
+        frame.loc[legacy_flow, "Modo"] = "flujo"
+        frame.loc[legacy_flow & frame["Flujo_observado_PLM2"].isna(), "Flujo_observado_PLM2"] = (
+            frame.loc[
+                legacy_flow & frame["Flujo_observado_PLM2"].isna(),
+                "Valor_original",
+            ]
+        )
+        flow_mask = frame["Modo"].eq("flujo") & frame["Flujo_observado_PLM2"].notna()
+        calculated_cumulative = frame["Flujo_observado_PLM2"].where(flow_mask, 0.0).cumsum()
+        frame.loc[flow_mask & frame["Acumulado_PLM2"].isna(), "Acumulado_PLM2"] = (
+            calculated_cumulative[flow_mask & frame["Acumulado_PLM2"].isna()]
+        )
+        return frame
 
     def delete_observations(self, site_id: str, observed_dates) -> int:
         """Borra fechas explícitas de un lote y devuelve la cantidad eliminada."""

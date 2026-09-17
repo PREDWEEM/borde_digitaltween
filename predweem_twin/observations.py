@@ -10,6 +10,8 @@ import unicodedata
 import numpy as np
 import pandas as pd
 
+from .assimilation import estimate_flow_potential
+
 
 DATE_ALIASES = {"fecha", "date", "datetime", "fecha_muestreo"}
 FLOW_ALIASES = {
@@ -132,13 +134,15 @@ def prepare_observations(
     mode: str = "auto",
     uncertainty: float = 0.08,
     replicate_uncertainty_floor: float = 0.05,
+    seasonal_potential_prior: float | None = None,
     source_name: str = "Archivo cargado",
 ) -> tuple[pd.DataFrame, dict]:
     """Convierte flujos PLM2 o acumulados porcentuales al estado 0–1.
 
     Cuando hay repeticiones, verifica la media aportada, infiere el factor de
-    conversión a m² y estima la incertidumbre mediante el error estándar
-    acumulado. Para archivos sin repeticiones usa la incertidumbre indicada.
+    conversión a m² y estima la incertidumbre mediante el error estándar del
+    flujo de cada intervalo. Para archivos sin repeticiones usa la
+    incertidumbre indicada.
     """
     if not 0 < float(uncertainty) <= 1:
         raise ValueError("La incertidumbre debe expresarse entre 0 y 1.")
@@ -293,18 +297,14 @@ def prepare_observations(
         if observed_total <= 0:
             raise ValueError("La suma de PLM2 debe ser mayor que cero.")
 
-        if model_cumulative[-1] >= 0.85:
-            seasonal_total = observed_total
-            method = "total observado de una serie casi completa"
-        else:
-            denominator = float(np.dot(model_intervals, model_intervals))
-            regression_total = (
-                float(np.dot(model_intervals, observed_flows) / denominator)
-                if denominator > 0
-                else observed_total
-            )
-            seasonal_total = max(observed_total, regression_total)
-            method = "potencial estacional estimado por escala modelo–campo"
+        potential_info = estimate_flow_potential(
+            model_intervals,
+            observed_flows,
+            float(model_cumulative[-1]),
+            seasonal_potential_prior=seasonal_potential_prior,
+        )
+        seasonal_total = potential_info["potential"]
+        method = "potencial dinámico estimado desde los flujos por intervalo"
 
         prepared["Flujo_observado_PLM2"] = prepared["Valor_original"]
         prepared["Acumulado_PLM2"] = prepared["Valor_original"].cumsum()
@@ -318,15 +318,14 @@ def prepare_observations(
                 "potencial_estacional_plm2": seasonal_total,
                 "metodo_normalizacion": method,
                 "progreso_modelo_ultima_fecha": float(model_cumulative[-1]),
+                "calidad_ajuste_flujos": potential_info["fit_quality"],
+                "cv_potencial_estimado": potential_info["potential_cv"],
             }
         )
         if repetition_output_columns:
-            cumulative_se = np.sqrt(
-                np.cumsum(
-                    np.square(prepared["EE_repeticiones_PLM2"].to_numpy(float))
-                )
+            estimated_uncertainty = (
+                prepared["EE_repeticiones_PLM2"].to_numpy(float) / seasonal_total
             )
-            estimated_uncertainty = cumulative_se / seasonal_total
             prepared["Incertidumbre"] = np.clip(
                 np.maximum(
                     estimated_uncertainty, float(replicate_uncertainty_floor)
@@ -337,7 +336,7 @@ def prepare_observations(
             metadata.update(
                 {
                     "metodo_incertidumbre": (
-                        "error estándar acumulado de las repeticiones, "
+                        "error estándar del flujo entre repeticiones, "
                         f"con mínimo de {replicate_uncertainty_floor:.0%}"
                     ),
                     "incertidumbre_minima": float(prepared["Incertidumbre"].min()),

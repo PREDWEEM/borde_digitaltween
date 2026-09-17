@@ -32,25 +32,38 @@ El sistema mantiene explícitamente:
 
 ## Asimilación de datos
 
-Las observaciones deben expresar la **emergencia acumulada normalizada entre 0
-y 1** (la interfaz usa 0–100 %). La actualización utiliza una ganancia escalar:
+Los conteos en plantas/m² se interpretan como el flujo ocurrido desde el
+muestreo anterior. Para cada intervalo, el gemelo suma el flujo diario relativo
+producido por PREDWEEM y lo compara con el flujo observado:
+
+\[
+Y_i = N \sum_{d=t_{i-1}+1}^{t_i} e_d
+\]
+
+donde `Y_i` es el flujo observado, `e_d` el flujo diario relativo y `N` el
+potencial estacional latente. La aplicación estima `N` secuencialmente sin
+tratar una serie parcial como si estuviera completa. Puede incorporarse un
+potencial histórico previo del lote; el valor `0` activa la estimación
+automática.
+
+La corrección de cada flujo utiliza una ganancia escalar:
 
 \[
 K = \frac{P}{P + R}, \qquad x^+ = x^- + K(y-x^-)
 \]
 
-donde `P` y `R` son las varianzas declaradas del modelo y del conteo. Después de
+donde `P` y `R` son las varianzas del modelo y del flujo observado. Después de
 cada corrección, la curva futura se reancla sobre la fracción aún no emergida.
-Así se preservan los forzantes ecofisiológicos de PREDWEEM, la monotonía y los
-límites 0–1. No se reentrena ni se recalibra la ANN con cada conteo.
+Los archivos que ya contienen acumulados normalizados mantienen el método
+escalar anterior como modo de compatibilidad. No se reentrena la ANN.
 
 ## Funciones de la aplicación
 
 - meteorología operativa INTA Bordenave + ECMWF;
 - alternativa georreferenciada de Open-Meteo;
-- carga manual de CSV/XLSX;
+- carga de meteorología CSV/XLSX;
 - estado persistente por identificador de lote en SQLite;
-- registro de conteos con incertidumbre;
+- asimilación directa de conteos por intervalo con incertidumbre;
 - carga masiva de observaciones CSV/XLS/XLSX en formato `FECHA + PLM2` o
   `FECHA + EMERGENCIA_ACUMULADA`;
 - curva PREDWEEM base frente a estado Twin actualizado;
@@ -88,16 +101,30 @@ La pestaña **Observaciones** acepta dos estructuras:
 | `FECHA` | `EMERGENCIA_ACUMULADA` u `OBSERVADO` | Acumulado expresado entre 0–1 o 0–100 % |
 | `Fecha` + `1`, `2`, `3` | `media(SR).m2` | Tres repeticiones por cuadrante y su media convertida a plantas/m² |
 
-Para `PLM2`, la aplicación conserva el conteo original y genera la fracción
-acumulada usada por la asimilación. Si la última fecha ya cubre al menos el 85 %
-del progreso simulado, normaliza por el total observado. En una campaña
-incompleta estima el potencial estacional mediante la escala entre los flujos
-simulados y observados. La previsualización muestra el método antes de guardar.
+Para `PLM2`, la aplicación conserva cada flujo y su acumulado absoluto. El
+potencial estacional combina el progreso estructural de PREDWEEM con el ajuste
+de los flujos por intervalo. El ajuste recibe más peso cuando reproduce bien la
+forma observada y menos peso cuando la correspondencia temporal es débil. Esto
+evita convertir prematuramente una campaña incompleta en 100 % de emergencia.
 
 Cuando el archivo contiene repeticiones, la aplicación comprueba que la media
 sea consistente, infiere el factor de conversión del cuadrante a m² y calcula la
-incertidumbre desde el error estándar acumulado. Se aplica un mínimo de 5 % para
+incertidumbre desde el error estándar del flujo. Se aplica un mínimo de 5 % para
 incorporar variación espacial y de muestreo no representada por tres cuadrantes.
+
+La incertidumbre de las repeticiones se calcula sobre el flujo de cada intervalo
+y el potencial estacional mantiene su propia incertidumbre. La interfaz muestra
+por separado el acumulado estimado en plantas/m², el potencial estacional y el
+progreso relativo.
+
+### Diagnóstico retrospectivo del corte al 5 de abril
+
+Con los datos Bordenave 2026 disponibles únicamente hasta el 30 de marzo, el
+nuevo método utilizó nueve flujos, estimó un potencial de 7770 plantas/m² y un
+estado actualizado de 75,3 %. El valor retrospectivo calculado al completar la
+campaña fue 71,7 %. El RMSE acumulado posterior fue 2,2 puntos porcentuales a
+30 días y 2,7 puntos a 60 días. Es un diagnóstico interno de una campaña, no
+una validación prospectiva independiente.
 
 ## Alcance científico
 

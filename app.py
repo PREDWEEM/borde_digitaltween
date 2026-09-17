@@ -64,7 +64,7 @@ def load_open_meteo(latitude, longitude, start_date):
     return fetch_open_meteo(latitude, longitude, start_date)
 
 
-def trajectory_chart(df, observations, as_of):
+def trajectory_chart(df, observations, as_of, audit=None):
     figure = make_subplots(specs=[[{"secondary_y": True}]])
     figure.add_trace(
         go.Bar(
@@ -96,7 +96,18 @@ def trajectory_chart(df, observations, as_of):
         ),
         secondary_y=False,
     )
-    if observations is not None and not observations.empty:
+    if audit is not None and not audit.empty and "Estado_campo_estimado" in audit:
+        figure.add_trace(
+            go.Scatter(
+                x=audit["Fecha_asimilada"],
+                y=audit["Estado_campo_estimado"] * 100,
+                name="Estado estimado desde campo",
+                mode="markers",
+                marker=dict(color="#df5b3f", size=11, line=dict(color="white", width=2)),
+            ),
+            secondary_y=False,
+        )
+    elif observations is not None and not observations.empty:
         figure.add_trace(
             go.Scatter(
                 x=observations["Fecha"],
@@ -149,6 +160,19 @@ with st.sidebar:
     coverage = st.slider("Cobertura de rastrojo (%)", 0, 100, 50, 5)
     w_max = st.slider("Agua superficial Wmax (mm)", 10.0, 36.0, 18.8, 0.5)
     model_uncertainty = st.slider("Incertidumbre del modelo", 0.03, 0.30, 0.12, 0.01)
+    seasonal_potential_input = st.number_input(
+        "Potencial estacional previo (plantas/m²)",
+        min_value=0.0,
+        value=0.0,
+        step=100.0,
+        help=(
+            "Use 0 para estimación automática. Ingrese un valor histórico "
+            "del lote si está disponible."
+        ),
+    )
+    seasonal_potential_prior = (
+        float(seasonal_potential_input) if seasonal_potential_input > 0 else None
+    )
     st.caption("La asimilación modifica el estado estimado, no recalibra la ANN.")
 
 try:
@@ -178,10 +202,14 @@ model = load_model()
 store = load_store()
 base_trajectory = run_predweem(weather, model, parameters)
 observations = store.observations(site_id)
+active_observations = observations[
+    pd.to_datetime(observations["Fecha"], errors="coerce") <= pd.Timestamp(as_of)
+].copy()
 twin_trajectory, assimilation_audit = assimilate_observations(
     base_trajectory,
-    observations,
+    active_observations,
     model_uncertainty=model_uncertainty,
+    seasonal_potential_prior=seasonal_potential_prior,
 )
 source_label = weather_source_label(weather)
 snapshot = build_twin_snapshot(
@@ -197,6 +225,12 @@ st.markdown(
     f'<span class="status-pill">● ACTUALIZADO AL {pd.Timestamp(snapshot["as_of"]).strftime("%d/%m/%Y")}</span>',
     unsafe_allow_html=True,
 )
+if snapshot["last_observation_date"]:
+    st.caption(
+        "Estado actualizado con flujos de campo hasta "
+        f'**{pd.Timestamp(snapshot["last_observation_date"]).strftime("%d/%m/%Y")}**. '
+        "Desde esa fecha se proyecta con el flujo diario de PREDWEEM."
+    )
 
 metric_columns = st.columns(5)
 metric_columns[0].metric("Emergencia estimada", f'{snapshot["emergence"]:.0%}')
@@ -210,7 +244,29 @@ tab_state, tab_observations, tab_scenarios, tab_audit = st.tabs(
 )
 
 with tab_state:
-    st.plotly_chart(trajectory_chart(twin_trajectory, observations, as_of), width="stretch")
+    if snapshot["seasonal_potential_plm2"] is not None:
+        field_metrics = st.columns(3)
+        field_metrics[0].metric(
+            "Acumulado estimado",
+            f'{snapshot["emergence_density_plm2"]:.1f} plantas/m²',
+        )
+        field_metrics[1].metric(
+            "Potencial estacional estimado",
+            f'{snapshot["seasonal_potential_plm2"]:.1f} plantas/m²',
+        )
+        field_metrics[2].metric(
+            "Modo de actualización",
+            snapshot["assimilation_mode"].capitalize(),
+        )
+    st.plotly_chart(
+        trajectory_chart(
+            twin_trajectory,
+            active_observations,
+            as_of,
+            assimilation_audit,
+        ),
+        width="stretch",
+    )
     left, right = st.columns([1.35, 1])
     with left:
         st.subheader("Lectura agronómica")
@@ -282,6 +338,7 @@ with tab_observations:
                 base_trajectory,
                 mode=mode_map[upload_mode_label],
                 uncertainty=upload_uncertainty_pct / 100.0,
+                seasonal_potential_prior=seasonal_potential_prior,
                 source_name=(
                     f'{file_metadata["archivo"]} · hoja {file_metadata["hoja"]}'
                 ),
@@ -298,7 +355,7 @@ with tab_observations:
                     f'{import_metadata["total_observado_plm2"]:.1f} plantas/m²',
                 )
                 summary_columns[1].metric(
-                    "Potencial estacional usado",
+                    "Potencial estacional estimado",
                     f'{import_metadata["potencial_estacional_plm2"]:.1f} plantas/m²',
                 )
                 summary_columns[2].metric(
@@ -311,6 +368,10 @@ with tab_observations:
                         f'{import_metadata["n_repeticiones"]} por fecha',
                     )
                 st.caption(import_metadata["metodo_normalizacion"].capitalize() + ".")
+                st.caption(
+                    "Cada fila se interpreta como el flujo ocurrido desde el "
+                    "muestreo anterior y se compara con la suma del flujo diario simulado."
+                )
                 if has_repetitions:
                     factor = import_metadata["factor_conversion_repeticiones"]
                     area = import_metadata["area_cuadrante_inferida_m2"]
@@ -345,7 +406,7 @@ with tab_observations:
                 width="stretch",
                 column_config={
                     "Observado": st.column_config.NumberColumn(
-                        "Emergencia acumulada", format="percent"
+                        "Progreso acumulado estimado", format="percent"
                     ),
                     "Incertidumbre": st.column_config.NumberColumn(
                         "Incertidumbre", format="percent"
@@ -423,8 +484,9 @@ with tab_scenarios:
     scenario_base = run_predweem(scenario_weather, model, parameters)
     scenario_twin, _ = assimilate_observations(
         scenario_base,
-        observations,
+        active_observations,
         model_uncertainty=model_uncertainty,
+        seasonal_potential_prior=seasonal_potential_prior,
     )
     scenario_snapshot = build_twin_snapshot(
         scenario_twin, site_id, as_of, "Escenario", len(assimilation_audit)
@@ -455,8 +517,18 @@ with tab_audit:
     st.subheader("Trazabilidad científica")
     audit_summary = pd.DataFrame(
         {
-            "Variable": ["Lote", "Fuente meteorológica", "Cobertura", "Wmax", "Incertidumbre modelo", "Observaciones asimiladas"],
-            "Valor": [site_id, source_label, f"{coverage} %", f"{w_max:.1f} mm", f"{model_uncertainty:.0%}", str(len(assimilation_audit))],
+            "Variable": [
+                "Lote", "Fuente meteorológica", "Cobertura", "Wmax",
+                "Incertidumbre modelo", "Potencial previo", "Modo de asimilación",
+                "Observaciones asimiladas",
+            ],
+            "Valor": [
+                site_id, source_label, f"{coverage} %", f"{w_max:.1f} mm",
+                f"{model_uncertainty:.0%}",
+                f"{seasonal_potential_prior:.1f} plantas/m²"
+                if seasonal_potential_prior is not None else "Automático",
+                snapshot["assimilation_mode"], str(len(assimilation_audit)),
+            ],
         }
     )
     st.dataframe(audit_summary, hide_index=True, width="stretch")
@@ -467,7 +539,8 @@ with tab_audit:
     export_columns = [
         "Fecha", "TMAX", "TMIN", "Prec", "EMERREL", "EMERAC_NORMALIZADA",
         "EMERREL_TWIN", "EMERAC_TWIN", "W_superficial", "Humedad_Relativa",
-        "Termoinhibida", "TT_DESDE_PICO",
+        "EMERREL_TWIN_PLM2", "EMERAC_TWIN_PLM2", "POTENCIAL_ESTACIONAL_PLM2",
+        "MODO_ASIMILACION", "ULTIMA_OBSERVACION", "Termoinhibida", "TT_DESDE_PICO",
     ]
     st.download_button(
         "Descargar trayectoria auditable (CSV)",
