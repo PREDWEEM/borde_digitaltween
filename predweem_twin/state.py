@@ -1,0 +1,95 @@
+"""Construcción del estado operativo diario del gemelo."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+
+import pandas as pd
+
+
+@dataclass(frozen=True)
+class TwinSnapshot:
+    site_id: str
+    as_of: str
+    emergence: float
+    remaining: float
+    risk_7d: str
+    increment_7d: float
+    soil_water: float
+    soil_water_fraction: float
+    thermal_time: float
+    thermoinhibited: bool
+    next_cohort_start: str | None
+    next_cohort_end: str | None
+    weather_source: str
+    assimilated_observations: int
+
+
+def _risk(increment: float) -> str:
+    if increment <= 0.01:
+        return "Nulo"
+    if increment <= 0.05:
+        return "Bajo"
+    if increment <= 0.15:
+        return "Medio"
+    return "Alto"
+
+
+def _next_cohort(df: pd.DataFrame, idx: int, threshold: float = 0.01):
+    future = df.loc[idx + 1 :].copy()
+    active = future[future["EMERREL_TWIN"] >= threshold]
+    if active.empty:
+        return None, None
+    start_idx = active.index[0]
+    end_idx = start_idx
+    for candidate in range(start_idx + 1, len(df)):
+        if float(df.at[candidate, "EMERREL_TWIN"]) < threshold:
+            break
+        end_idx = candidate
+    return df.at[start_idx, "Fecha"], df.at[end_idx, "Fecha"]
+
+
+def build_twin_snapshot(
+    trajectory: pd.DataFrame,
+    site_id: str,
+    as_of,
+    weather_source: str,
+    assimilated_observations: int = 0,
+) -> dict:
+    as_of = pd.Timestamp(as_of).tz_localize(None).normalize()
+    df = trajectory.sort_values("Fecha").reset_index(drop=True)
+    candidates = df.index[df["Fecha"] <= as_of].tolist()
+    idx = candidates[-1] if candidates else 0
+    future_idx = min(idx + 7, len(df) - 1)
+    current = float(df.at[idx, "EMERAC_TWIN"])
+    future = float(df.at[future_idx, "EMERAC_TWIN"])
+    increment = max(0.0, future - current)
+    start, end = _next_cohort(df, idx)
+    snapshot = TwinSnapshot(
+        site_id=site_id,
+        as_of=df.at[idx, "Fecha"].date().isoformat(),
+        emergence=current,
+        remaining=max(0.0, 1.0 - current),
+        risk_7d=_risk(increment),
+        increment_7d=increment,
+        soil_water=float(df.at[idx, "W_superficial"]),
+        soil_water_fraction=float(df.at[idx, "Humedad_Relativa"]),
+        thermal_time=float(df.at[idx, "TT_DESDE_PICO"]),
+        thermoinhibited=bool(df.at[idx, "Termoinhibida"]),
+        next_cohort_start=start.date().isoformat() if start is not None else None,
+        next_cohort_end=end.date().isoformat() if end is not None else None,
+        weather_source=weather_source,
+        assimilated_observations=int(assimilated_observations),
+    )
+    return asdict(snapshot)
+
+
+def milestone_dates(trajectory: pd.DataFrame) -> dict[str, str | None]:
+    milestones = {}
+    for threshold in (0.25, 0.50, 0.75, 0.95):
+        reached = trajectory[trajectory["EMERAC_TWIN"] >= threshold]
+        milestones[f"d{int(threshold * 100)}"] = (
+            reached.iloc[0]["Fecha"].date().isoformat() if not reached.empty else None
+        )
+    return milestones
+
