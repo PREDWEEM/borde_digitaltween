@@ -33,6 +33,27 @@ def _file_bytes(source) -> tuple[bytes, str]:
     return path.read_bytes(), path.name
 
 
+def has_coverage_columns(frame: pd.DataFrame) -> bool:
+    """Indica si una tabla contiene fecha y cobertura reconocibles."""
+    names = {_normalized_name(column) for column in frame.columns}
+    return bool(
+        names.intersection(DATE_ALIASES)
+        and names.intersection(COVERAGE_ALIASES)
+    )
+
+
+def has_coverage_data(frame: pd.DataFrame) -> bool:
+    """Indica si, además de la columna, existe al menos una medición."""
+    mapping = {_normalized_name(column): column for column in frame.columns}
+    coverage_column = next(
+        (mapping[name] for name in COVERAGE_ALIASES if name in mapping), None
+    )
+    if coverage_column is None:
+        return False
+    values = frame[coverage_column]
+    return bool((values.notna() & values.astype(str).str.strip().ne("")).any())
+
+
 def read_coverage_file(source) -> tuple[pd.DataFrame, dict]:
     """Lee CSV/XLS/XLSX y busca una hoja con fecha y cobertura porcentual."""
     payload, filename = _file_bytes(source)
@@ -53,9 +74,8 @@ def read_coverage_file(source) -> tuple[pd.DataFrame, dict]:
 
     reviewed = []
     for sheet_name, frame in sheets.items():
-        names = {_normalized_name(column) for column in frame.columns}
         reviewed.append(sheet_name)
-        if names.intersection(DATE_ALIASES) and names.intersection(COVERAGE_ALIASES):
+        if has_coverage_columns(frame):
             return frame, {"archivo": filename, "hoja": sheet_name}
     raise ValueError(
         "No se encontró una hoja con FECHA y COBERTURA_PCT. "
@@ -83,6 +103,13 @@ def prepare_coverage_series(
     prepared = raw[[date_column, coverage_column]].copy().rename(
         columns={date_column: "Fecha", coverage_column: "Cobertura_PCT"}
     )
+    supplied = (
+        prepared["Cobertura_PCT"].notna()
+        & prepared["Cobertura_PCT"].astype(str).str.strip().ne("")
+    )
+    prepared = prepared.loc[supplied].copy()
+    if prepared.empty:
+        raise ValueError("La columna de cobertura no contiene mediciones.")
     prepared["Fecha"] = pd.to_datetime(
         prepared["Fecha"], errors="coerce"
     ).dt.tz_localize(None)
@@ -102,8 +129,6 @@ def prepare_coverage_series(
         .drop_duplicates("Fecha", keep="last")
         .reset_index(drop=True)
     )
-    if prepared.empty:
-        raise ValueError("La serie de cobertura está vacía.")
     if minimum_date is not None and prepared["Fecha"].min() < pd.Timestamp(minimum_date):
         raise ValueError("Hay mediciones anteriores al inicio de la serie meteorológica.")
     if maximum_date is not None and prepared["Fecha"].max() > pd.Timestamp(maximum_date):

@@ -3,7 +3,12 @@ from io import BytesIO
 import numpy as np
 import pandas as pd
 
-from predweem_twin.coverage import prepare_coverage_series, read_coverage_file
+from predweem_twin.coverage import (
+    has_coverage_columns,
+    has_coverage_data,
+    prepare_coverage_series,
+    read_coverage_file,
+)
 from predweem_twin.core import daily_coverage, surface_parameters
 from predweem_twin.storage import TwinStore
 
@@ -25,6 +30,39 @@ def test_coverage_file_is_read_and_validated():
 
     assert file_metadata == {"archivo": "cobertura.xlsx", "hoja": "Rastrojo"}
     assert prepared["Cobertura_PCT"].tolist() == [82.0, 70.0]
+    assert metadata["filas"] == 2
+
+
+def test_coverage_is_detected_inside_emergence_table():
+    combined = pd.DataFrame(
+        {
+            "Fecha": ["2026-02-02", "2026-02-09"],
+            1: [338, 3],
+            2: [120, 4],
+            3: [77, 16],
+            "media(SR).m2": [713.33, 30.67],
+            "cobertura": [60, 55],
+        }
+    )
+
+    assert has_coverage_columns(combined)
+    assert has_coverage_data(combined)
+    prepared, metadata = prepare_coverage_series(combined)
+    assert prepared["Cobertura_PCT"].tolist() == [60, 55]
+    assert metadata["filas"] == 2
+
+
+def test_sparse_embedded_coverage_ignores_blank_cells():
+    combined = pd.DataFrame(
+        {
+            "Fecha": ["2026-02-02", "2026-02-09", "2026-02-16"],
+            "PLM2": [10, 20, 30],
+            "COBERTURA_PCT": [60, None, 50],
+        }
+    )
+
+    prepared, metadata = prepare_coverage_series(combined)
+    assert prepared["Cobertura_PCT"].tolist() == [60, 50]
     assert metadata["filas"] == 2
 
 

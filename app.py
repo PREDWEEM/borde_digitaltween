@@ -12,7 +12,11 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from predweem_twin.assimilation import assimilate_observations
-from predweem_twin.coverage import prepare_coverage_series, read_coverage_file
+from predweem_twin.coverage import (
+    has_coverage_data,
+    prepare_coverage_series,
+    read_coverage_file,
+)
 from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
 from predweem_twin.observations import prepare_observations, read_observation_file
 from predweem_twin.scenarios import apply_scenario
@@ -345,7 +349,8 @@ with tab_observations:
     st.caption(
         "Admite FECHA + PLM2 (flujo por intervalo) o FECHA + "
         "EMERGENCIA_ACUMULADA/OBSERVADO (0–1 o 0–100 %). También reconoce "
-        "tres repeticiones (1, 2, 3) y una columna media por m²."
+        "tres repeticiones (1, 2, 3), una columna media por m² y una columna "
+        "opcional COBERTURA_PCT o cobertura."
     )
     uploaded_observations = st.file_uploader(
         "Archivo de emergencia observada",
@@ -376,6 +381,20 @@ with tab_observations:
     if uploaded_observations is not None:
         try:
             raw_observations, file_metadata = read_observation_file(uploaded_observations)
+            embedded_coverage = None
+            embedded_coverage_metadata = None
+            if has_coverage_data(raw_observations):
+                embedded_coverage, embedded_coverage_metadata = (
+                    prepare_coverage_series(
+                        raw_observations,
+                        minimum_date=weather_dates.min(),
+                        maximum_date=weather_dates.max(),
+                        source_name=(
+                            f'{file_metadata["archivo"]} · '
+                            f'hoja {file_metadata["hoja"]}'
+                        ),
+                    )
+                )
             prepared_observations, import_metadata = prepare_observations(
                 raw_observations,
                 base_trajectory,
@@ -390,6 +409,13 @@ with tab_observations:
                 f'{import_metadata["filas"]} observaciones válidas. '
                 f'Modo detectado: {import_metadata["modo"]}.'
             )
+            if embedded_coverage is not None:
+                st.success(
+                    f'Cobertura incluida: {embedded_coverage_metadata["filas"]} '
+                    f'mediciones, rango '
+                    f'{embedded_coverage_metadata["cobertura_minima"]:.0f}–'
+                    f'{embedded_coverage_metadata["cobertura_maxima"]:.0f} %.'
+                )
             if import_metadata["modo"] == "flujo":
                 has_repetitions = "n_repeticiones" in import_metadata
                 summary_columns = st.columns(4 if has_repetitions else 3)
@@ -456,14 +482,41 @@ with tab_observations:
                     ),
                 },
             )
+            if embedded_coverage is not None:
+                st.markdown("**Cobertura detectada en el mismo archivo**")
+                st.dataframe(
+                    embedded_coverage[["Fecha", "Cobertura_PCT"]],
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "Cobertura_PCT": st.column_config.NumberColumn(
+                            "Cobertura (%)",
+                            min_value=0,
+                            max_value=100,
+                            format="%.1f %%",
+                        )
+                    },
+                )
             if st.button(
-                "Incorporar observaciones al gemelo",
+                (
+                    "Incorporar emergencia y cobertura al gemelo"
+                    if embedded_coverage is not None
+                    else "Incorporar observaciones al gemelo"
+                ),
                 type="primary",
                 key="save_observation_upload",
             ):
                 store.upsert_observations(site_id, prepared_observations)
+                if embedded_coverage is not None:
+                    store.upsert_coverage_observations(site_id, embedded_coverage)
                 st.success(
-                    f'Se incorporaron {len(prepared_observations)} fechas al lote {site_id}.'
+                    f'Se incorporaron {len(prepared_observations)} fechas de '
+                    f'emergencia al lote {site_id}'
+                    + (
+                        f' y {len(embedded_coverage)} mediciones de cobertura.'
+                        if embedded_coverage is not None
+                        else "."
+                    )
                 )
                 st.rerun()
         except Exception as error:

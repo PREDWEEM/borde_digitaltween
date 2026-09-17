@@ -120,6 +120,11 @@ La pestaña **Observaciones** acepta dos estructuras:
 | `FECHA` | `EMERGENCIA_ACUMULADA` u `OBSERVADO` | Acumulado expresado entre 0–1 o 0–100 % |
 | `Fecha` + `1`, `2`, `3` | `media(SR).m2` | Tres repeticiones por cuadrante y su media convertida a plantas/m² |
 
+El mismo archivo puede incluir una columna opcional `COBERTURA_PCT` o
+`cobertura`. Al confirmar la carga, la aplicación guarda simultáneamente los
+flujos de emergencia y la serie de cobertura para el lote. La validación exige
+valores de cobertura entre 0 y 100.
+
 Para `PLM2`, la aplicación conserva cada flujo y su acumulado absoluto. El
 potencial estacional combina el progreso estructural de PREDWEEM con el ajuste
 de los flujos por intervalo. El ajuste recibe más peso cuando reproduce bien la
