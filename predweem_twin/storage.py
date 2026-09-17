@@ -175,6 +175,27 @@ class TwinStore:
                 parse_dates=["Fecha", "Registrado"],
             )
 
+    def delete_observations(self, site_id: str, observed_dates) -> int:
+        """Borra fechas explícitas de un lote y devuelve la cantidad eliminada."""
+        dates = sorted(
+            {
+                pd.Timestamp(observed_at).date().isoformat()
+                for observed_at in observed_dates
+            }
+        )
+        if not dates:
+            return 0
+        placeholders = ", ".join("?" for _ in dates)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                f"""
+                DELETE FROM observations
+                WHERE site_id=? AND observed_at IN ({placeholders})
+                """,
+                (site_id, *dates),
+            )
+            return int(cursor.rowcount)
+
     def save_snapshot(self, snapshot: dict):
         with self.connect() as connection:
             connection.execute(

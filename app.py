@@ -367,19 +367,51 @@ with tab_observations:
 
     st.divider()
     st.markdown("#### Observaciones guardadas")
-    st.dataframe(
-        observations,
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "Observado": st.column_config.NumberColumn(
-                "Emergencia acumulada", format="percent"
-            ),
-            "Incertidumbre": st.column_config.NumberColumn(
-                "Incertidumbre", format="percent"
-            ),
-        },
-    )
+    if observations.empty:
+        st.info("No hay observaciones guardadas para este lote.")
+    else:
+        st.dataframe(
+            observations,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Observado": st.column_config.NumberColumn(
+                    "Emergencia acumulada", format="percent"
+                ),
+                "Incertidumbre": st.column_config.NumberColumn(
+                    "Incertidumbre", format="percent"
+                ),
+            },
+        )
+        with st.expander("Borrar observaciones"):
+            available_dates = observations["Fecha"].dt.date.tolist()
+            select_all_dates = st.checkbox(
+                "Seleccionar todas las fechas",
+                value=False,
+                key="select_all_observation_dates",
+            )
+            selected_dates = st.multiselect(
+                "Fechas que desea borrar",
+                options=available_dates,
+                format_func=lambda value: value.strftime("%d/%m/%Y"),
+                disabled=select_all_dates,
+                key="observation_dates_to_delete",
+            )
+            dates_to_delete = available_dates if select_all_dates else selected_dates
+            confirmation = st.checkbox(
+                f"Confirmo que deseo borrar {len(dates_to_delete)} observación(es) "
+                f"del lote {site_id}.",
+                value=False,
+                key="confirm_observation_deletion",
+            )
+            if st.button(
+                "Borrar observaciones seleccionadas",
+                disabled=not dates_to_delete or not confirmation,
+                key="delete_selected_observations",
+            ):
+                deleted = store.delete_observations(site_id, dates_to_delete)
+                st.success(f"Se borraron {deleted} observación(es) del lote {site_id}.")
+                st.rerun()
 
 with tab_scenarios:
     st.subheader("¿Qué pasa si…?")

@@ -118,3 +118,22 @@ def test_bulk_storage_preserves_repetitions(tmp_path):
     ]
     assert stored["Factor_conversion_repeticiones"].eq(4.0).all()
     assert stored["EE_repeticiones_PLM2"].notna().all()
+
+
+def test_delete_observations_only_removes_selected_dates_from_active_site(tmp_path):
+    raw = pd.DataFrame(
+        {"FECHA": ["2026-03-02", "2026-03-16"], "PLM2": [12.0, 30.0]}
+    )
+    prepared, _ = prepare_observations(raw, real_trajectory(), mode="flujo")
+    store = TwinStore(tmp_path / "twin.db")
+    store.upsert_observations("Lote-A", prepared)
+    store.upsert_observations("Lote-B", prepared)
+
+    deleted = store.delete_observations("Lote-A", ["2026-03-02"])
+
+    assert deleted == 1
+    assert store.observations("Lote-A")["Fecha"].dt.date.astype(str).tolist() == [
+        "2026-03-16"
+    ]
+    assert len(store.observations("Lote-B")) == 2
+    assert store.delete_observations("Lote-A", []) == 0
