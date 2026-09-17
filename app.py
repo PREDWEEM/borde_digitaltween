@@ -49,8 +49,13 @@ def load_model():
     return PracticalANNModel.from_directory(BASE / "models")
 
 
-@st.cache_resource
 def load_store():
+    """Crea el acceso SQLite con el esquema vigente.
+
+    No se almacena en cache_resource: durante una actualización en caliente,
+    Streamlit podría conservar una instancia creada con una versión anterior
+    de TwinStore y ocultar métodos o migraciones recién incorporados.
+    """
     return TwinStore(BASE / "data" / "twin_state.db")
 
 
