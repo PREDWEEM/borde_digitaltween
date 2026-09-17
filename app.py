@@ -366,28 +366,6 @@ with tab_observations:
             st.error(f"No fue posible procesar las observaciones: {error}")
 
     st.divider()
-    st.markdown("#### Registro manual")
-    st.caption("Registre emergencia acumulada normalizada (0–100 %). Un registro por fecha y lote.")
-    with st.form("observation_form", clear_on_submit=True):
-        columns = st.columns([1, 1, 1, 2])
-        observation_date = columns[0].date_input("Fecha", value=as_of, key="obs_date")
-        observation_pct = columns[1].number_input("Emergencia acumulada (%)", 0.0, 100.0, 50.0, 1.0)
-        observation_uncertainty = columns[2].number_input("Incertidumbre (%)", 1.0, 30.0, 8.0, 1.0)
-        observation_note = columns[3].text_input("Nota", placeholder="Método, cuadrantes, condición del lote")
-        submitted = st.form_submit_button("Guardar y actualizar gemelo", type="primary")
-    if submitted:
-        store.upsert_observation(
-            site_id,
-            observation_date,
-            observation_pct / 100.0,
-            observation_uncertainty / 100.0,
-            observation_note,
-            raw_value=observation_pct,
-            raw_unit="% acumulado",
-            source_name="Registro manual",
-        )
-        st.success("Observación registrada. El estado se actualizará con la nueva evidencia.")
-        st.rerun()
     st.markdown("#### Observaciones guardadas")
     st.dataframe(
         observations,
