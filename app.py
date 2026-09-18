@@ -99,8 +99,8 @@ def trajectory_chart(
             x=df["Fecha"],
             y=df["EMERREL_TWIN"] * 100,
             name="Flujo diario Twin",
-            marker_color="#8ebf69",
-            opacity=0.55,
+            marker_color="#3b82f6",
+            opacity=0.62,
         ),
         secondary_y=True,
     )
