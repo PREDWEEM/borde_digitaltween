@@ -12,6 +12,9 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from predweem_twin.assimilation import assimilate_observations
+from predweem_twin.calibration import (
+    apply_site_calibration, load_site_profile, model_fingerprint,
+)
 from predweem_twin.coverage import (
     has_coverage_data,
     prepare_coverage_series,
@@ -37,6 +40,7 @@ from predweem_twin.weather import (
 
 
 BASE = Path(__file__).parent
+CALIBRATION_DIR = BASE / "data" / "calibration"
 st.set_page_config(page_title="PREDWEEM Digital Twin", page_icon="🌱", layout="wide")
 
 st.markdown(
@@ -107,12 +111,20 @@ def trajectory_chart(
     figure.add_trace(
         go.Scatter(
             x=df["Fecha"],
-            y=df["EMERAC_NORMALIZADA"] * 100,
+            y=df.get("EMERAC_BASE_SIN_CALIBRAR", df["EMERAC_NORMALIZADA"]) * 100,
             name="PREDWEEM base",
             line=dict(color="#83938b", width=2, dash="dot"),
         ),
         secondary_y=False,
     )
+    if "Calibracion_Aplicada" in df and df["Calibracion_Aplicada"].any():
+        figure.add_trace(
+            go.Scatter(
+                x=df["Fecha"], y=df["EMERAC_CALIBRADA"] * 100,
+                name="Calibración Bordenave", line=dict(color="#9260bd", width=2),
+            ),
+            secondary_y=False,
+        )
     figure.add_trace(
         go.Scatter(
             x=df["Fecha"],
@@ -216,6 +228,11 @@ st.markdown(
 with st.sidebar:
     st.markdown("## Configuración del gemelo")
     site_id = st.text_input("Identificador del lote", "Bordenave-01")
+    calibration_site = st.selectbox("Localidad del lote", ["Bordenave", "Otra localidad"])
+    calibration_enabled = st.checkbox(
+        "Usar calibración local 2026", value=True,
+        help="Perfil experimental de Bordenave. Conserva la ANN y puede desactivarse para comparar.",
+    )
     latitude = st.number_input("Latitud", value=-37.761671, format="%.6f")
     longitude = st.number_input("Longitud", value=-63.083717, format="%.6f")
     source_option = st.radio(
@@ -321,10 +338,22 @@ coverage_at_cutoff = float(
 )
 observations = store.observations(site_id)
 active_observations = observations[
-    pd.to_datetime(observations["Fecha"], errors="coerce") <= pd.Timestamp(as_of)
+    (pd.to_datetime(observations["Fecha"], errors="coerce") <= pd.Timestamp(as_of))
+    & (pd.to_datetime(observations["Fecha"], errors="coerce").dt.year == pd.Timestamp(as_of).year)
 ].copy()
+try:
+    calibration_profile = load_site_profile(CALIBRATION_DIR / "bordenave_2026.json")
+except (ValueError, KeyError, TypeError) as error:
+    calibration_profile = None
+    st.warning(f"No se pudo cargar el perfil de calibración: {error}")
+current_model_fingerprint = model_fingerprint(BASE)
+calibrated_trajectory, calibration_audit = apply_site_calibration(
+    base_trajectory, calibration_profile,
+    site=calibration_site, as_of=as_of, enabled=calibration_enabled,
+    observations=active_observations, model_fingerprint=current_model_fingerprint,
+)
 twin_trajectory, assimilation_audit = assimilate_observations(
-    base_trajectory,
+    calibrated_trajectory,
     active_observations,
     model_uncertainty=model_uncertainty,
     seasonal_potential_prior=seasonal_potential_prior,
@@ -337,6 +366,7 @@ snapshot = build_twin_snapshot(
     source_label,
     len(assimilation_audit),
 )
+snapshot["calibration"] = calibration_audit
 milestones = milestone_dates(twin_trajectory)
 
 st.markdown(
@@ -381,11 +411,12 @@ metric_columns[2].metric("Riesgo próximos 7 días", snapshot["risk_7d"], f'+{sn
 metric_columns[3].metric("Agua superficial", f'{snapshot["soil_water"]:.1f} mm', f'{snapshot["soil_water_fraction"]:.0%} Wmax')
 metric_columns[4].metric("TT desde primer pico", f'{snapshot["thermal_time"]:.0f} °Cd', f'{parameters.tt_limite:.0f} °Cd límite')
 
-tab_state, tab_observations, tab_scenarios, tab_audit = st.tabs(
-    ["Estado del lote", "Observaciones", "Escenarios", "Trazabilidad"]
+tab_state, tab_observations, tab_calibration, tab_scenarios, tab_audit = st.tabs(
+    ["Estado del lote", "Observaciones", "Calibración por sitio", "Escenarios", "Trazabilidad"]
 )
 
 with tab_state:
+    st.caption(calibration_audit["reason"])
     if snapshot["seasonal_potential_plm2"] is not None:
         field_metrics = st.columns(3)
         field_metrics[0].metric(
@@ -761,6 +792,75 @@ with tab_observations:
                 st.success(f"Se borraron {deleted} medición(es) de cobertura.")
                 st.rerun()
 
+with tab_calibration:
+    st.subheader("Memoria local de Bordenave · campaña 2026")
+    st.info(calibration_audit["reason"])
+    if calibration_profile is not None:
+        fit = calibration_profile["fit"]
+        source = calibration_profile["source"]
+        st.write(
+            f'**{fit["n_observations"]} muestreos**, con tres repeticiones, del '
+            '**02/02/2026 al 14/09/2026**. Se conserva el conteo original de cada fecha '
+            'y se ajustan los intervalos entre muestreos, incluido el de 14 días de junio.'
+        )
+        st.caption(
+            f'Total registrado: {source["observed_total_plm2"]:.1f} plantas/m². '
+            'Es un total observado parcial, no el potencial estacional del lote. '
+            'El primer conteo se conserva pero se excluye del ajuste porque falta '
+            'la fecha de inicio de ese intervalo.'
+        )
+        calibration_metrics = st.columns(3)
+        calibration_metrics[0].metric("Intervalos de ajuste", fit["n_intervals"])
+        calibration_metrics[1].metric("RMSE base · ajuste", f'{fit["rmse_base_plm2"]:.1f} plantas/m²')
+        calibration_metrics[2].metric("RMSE calibrado · ajuste", f'{fit["rmse_calibrated_plm2"]:.1f} plantas/m²')
+        st.caption(
+            'Los RMSE anteriores se calculan sobre los mismos datos usados para ajustar. '
+            'Las curvas se escalan al total de la ventana muestreada; esa escala no '
+            'se transfiere como densidad a otros lotes.'
+        )
+        fit_table = pd.read_csv(CALIBRATION_DIR / "bordenave_2026_fit.csv")
+        fit_figure = go.Figure()
+        for column, label, color in (
+            ("Observado_PLM2", "Observado por intervalo", "#df5b3f"),
+            ("Base_PLM2_ajuste", "PREDWEEM base", "#83938b"),
+            ("Calibrado_PLM2_ajuste", "Calibración retrospectiva", "#9260bd"),
+        ):
+            fit_figure.add_trace(go.Scatter(
+                x=fit_table["Fecha"], y=fit_table[column], name=label,
+                mode="lines+markers", line=dict(color=color),
+            ))
+        fit_figure.update_layout(
+            height=380, xaxis_title="Fin del intervalo", yaxis_title="Plantas/m² por intervalo",
+            hovermode="x unified", plot_bgcolor="white", margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fit_figure, width="stretch")
+        st.markdown("#### Evaluación en intervalos posteriores")
+        st.write(calibration_profile["validation"]["note"])
+        st.dataframe(
+            pd.read_csv(CALIBRATION_DIR / "bordenave_2026_holdout.csv"),
+            hide_index=True, width="stretch",
+        )
+        st.warning(
+            'Perfil experimental de una sola campaña. El desplazamiento alcanzó '
+            'el límite permitido: persisten diferencias que esta capa no puede corregir. '
+            'La transferencia a otras campañas requiere validación.'
+            if fit["parameter_at_bound"] else
+            'Perfil experimental de una sola campaña; falta validar su transferencia a otros años.'
+        )
+        with st.expander("Supuestos, parámetros y procedencia"):
+            st.write(calibration_profile["limitations"])
+            st.json(calibration_profile)
+        st.download_button(
+            "Descargar conteos originales 2026 (CSV)",
+            (CALIBRATION_DIR / "bordenave_2026_counts.csv").read_bytes(),
+            "bordenave_2026_counts.csv", "text/csv",
+        )
+        st.caption(
+            'Los conteos se conservan como referencia de calibración. Para asimilarlos '
+            'en un lote, cargue este CSV en Observaciones. La carga mantiene las reglas '
+            'existentes de incorporación y borrado de datos.'
+        )
+
 with tab_scenarios:
     st.subheader("¿Qué pasa si…?")
     scenario_columns = st.columns(3)
@@ -776,8 +876,13 @@ with tab_scenarios:
         normalization_as_of=as_of,
         seasonal_reference=seasonal_reference,
     )
+    scenario_calibrated, _ = apply_site_calibration(
+        scenario_base, calibration_profile,
+        site=calibration_site, as_of=as_of, enabled=calibration_enabled,
+        observations=active_observations, model_fingerprint=current_model_fingerprint,
+    )
     scenario_twin, _ = assimilate_observations(
-        scenario_base,
+        scenario_calibrated,
         active_observations,
         model_uncertainty=model_uncertainty,
         seasonal_potential_prior=seasonal_potential_prior,
@@ -809,6 +914,9 @@ with tab_scenarios:
 
 with tab_audit:
     st.subheader("Trazabilidad científica")
+    st.write(calibration_audit["reason"])
+    if calibration_audit["profile_id"]:
+        st.caption(f'Perfil: {calibration_audit["profile_id"]}')
     audit_summary = pd.DataFrame(
         {
             "Variable": [
@@ -836,12 +944,17 @@ with tab_audit:
     )
     st.dataframe(audit_summary, hide_index=True, width="stretch")
     if assimilation_audit.empty:
-        st.info("Aún no hay observaciones de campo asimiladas. La curva Twin coincide con PREDWEEM base.")
+        st.info(
+            "Aún no hay observaciones de campo asimiladas. La curva Twin sigue "
+            + ("la trayectoria calibrada." if calibration_audit["applied"] else "PREDWEEM base.")
+        )
     else:
         st.dataframe(assimilation_audit, hide_index=True, width="stretch")
     export_columns = [
         "Fecha", "TMAX", "TMIN", "Prec", "FUENTE", "TIPODATO",
         "EMERREL", "EMERAC_NORMALIZADA",
+        "EMERAC_BASE_SIN_CALIBRAR", "EMERAC_CALIBRADA", "EMERREL_CALIBRADA",
+        "Calibracion_Perfil", "Calibracion_Aplicada", "Calibracion_Motivo",
         "EMERREL_TWIN", "EMERAC_TWIN", "W_superficial", "Humedad_Relativa",
         "EMERREL_TWIN_PLM2", "EMERAC_TWIN_PLM2", "POTENCIAL_ESTACIONAL_PLM2",
         "MODO_ASIMILACION", "ULTIMA_OBSERVACION", "Cobertura_Rastrojo",

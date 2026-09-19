@@ -98,6 +98,97 @@ advertencia de horizonte incompleto; no presupone que la campaña terminó.
 - fechas d25, d50, d75 y d95;
 - exportación CSV de la trayectoria completa y auditable.
 
+## Calibración por sitio con observaciones 2026
+
+La pestaña **Calibración por sitio** contiene los 32 muestreos del archivo
+`valida(2).xlsx`, hoja `Hoja1`, del 02/02 al 14/09/2026, asignados a Bordenave
+según la solicitud del autor. Se conservan las tres repeticiones y la media
+original en `data/calibration/bordenave_2026_counts.csv`. El factor inferido
+de conversión a m² es 4. El total registrado es **7041,33 plantas/m²** y no
+se interpreta como el potencial estacional de una campaña terminada.
+
+La capa externa aplica una transformación monótona al acumulado base:
+
+\[
+F_{local}=\operatorname{logistic}(a+b\operatorname{logit}(F_{base})).
+\]
+
+Se conservan los extremos 0 y 1, los días sin flujo, los pesos de la ANN,
+el balance hídrico, la termoinhibición y el reloj de 600–800 °Cd. La corrección
+puede modificar el progreso relativo y la distribución del flujo, pero no
+crear una cohorte donde los filtros biofísicos bloquean la emergencia.
+
+El ajuste compara las sumas del flujo entre fechas de conteo con los flujos
+observados. Hay **31 intervalos utilizables**, incluido el de 14 días entre
+el 1 y el 15 de junio. El primer conteo se conserva en el archivo original,
+pero no participa del ajuste porque se desconoce el inicio de su intervalo.
+No se interpolan observaciones diarias. Se pondera por el error estándar de
+las repeticiones con un piso común del 10 % del máximo flujo observado
+(mínimo 1 planta/m²). El ajuste se regulariza hacia la identidad y se limita
+a `a ∈ [-1.5, 1.5]` y `b ∈ [0.6, 1.6]`.
+
+Cada curva se escala al **total de la ventana muestreada**, sin declarar que
+esa ventana contiene el 100 % de la emergencia. La escala auxiliar sirve
+para comparar los intervalos; **no se transfiere como potencial o densidad
+a otro lote**. El potencial sigue siendo estimado por la asimilación existente.
+
+### Uso en el gemelo
+
+- Seleccionar **Localidad del lote: Bordenave** y **Usar calibración local 2026**.
+- El perfil se aplica antes de la asimilación y también a los escenarios.
+  El gráfico permite comparar base, calibración y estado actualizado.
+- No se aplica a otra localidad ni a una fecha anterior al 14/09/2026.
+  Los gráficos del año de ajuste son retrospectivos; el perfil fue preparado
+  el 19/09/2026 y no se presenta como disponible en un pronóstico histórico real.
+- Si se están asimilando conteos de la campaña 2026, se utiliza la base
+  original para evitar reutilizar esa campaña como calibración y evidencia
+  nueva. El perfil permanece guardado para campañas posteriores; sus conteos
+  nuevos sí pueden asimilarse sobre la trayectoria calibrada.
+- Los datos de referencia no sobrescriben SQLite ni se insertan automáticamente
+  en los lotes. La pestaña permite descargarlos para cargarlos en Observaciones.
+- La exportación incluye `EMERAC_BASE_SIN_CALIBRAR`, `EMERAC_CALIBRADA`,
+  `EMERREL_CALIBRADA`, identificación del perfil, motivo y estado de aplicación.
+- Un cambio de pesos, filtros o referencia histórica invalida la huella del
+  perfil; se usa la base original hasta regenerar la calibración.
+
+La capa admite campañas posteriores, pero la aplicación y su actualizador
+mantienen el cierre meteorológico **01/10/2026**. Al abrir una nueva campaña
+deberá configurarse su meteorología; este cambio no modifica ese cierre.
+
+### Resultado y alcance
+
+El ajuste inicial usa cobertura constante del **50 %** y Wmax **18,8 mm**,
+que son los valores de la interfaz. El archivo de conteos no aporta cobertura,
+manejo ni inicio del primer intervalo. La meteorología congelada contiene
+250 días SIGA y 7 provisionales, hasta el 14/09/2026. Los cambios de cobertura
+y Wmax en la interfaz siguen siendo posibles, pero no implican que el perfil
+se haya validado bajo esas condiciones.
+
+El perfil es **experimental, de una sola campaña incompleta**. El RMSE de
+ajuste por intervalo pasa de **381,96 a 284,41 plantas/m²** sobre los datos
+empleados para estimarlo. El desplazamiento alcanza el límite de +1,5,
+señal de diferencias estructurales que esta transformación no resuelve.
+
+Se incluyen seis evaluaciones temporales: se ajusta sólo con datos hasta
+cada corte y se evalúa el siguiente intervalo con meteorología
+observada/provisional. El RMSE conjunto pasa de **159,80 a 113,00 plantas/m²**,
+pero sólo dos intervalos mejoran; la reducción se concentra en uno de ellos.
+No son pronósticos archivados ni validación en otra campaña. No se reduce
+automáticamente la incertidumbre del gemelo ni se infiere precisión para 2027.
+
+### Reproducción
+
+```bash
+python scripts/calibrate_site.py
+python -m pytest -q
+```
+
+El generador usa los CSV fijos de `data/calibration/`, conserva los hashes
+del archivo original, observaciones, meteorología y modelo, y produce
+`bordenave_2026.json`, `bordenave_2026_fit.csv` y `bordenave_2026_holdout.csv`.
+No descarga datos ni reentrena la red. Para actualizar el perfil, incorporar
+los nuevos conteos y su meteorología, revisar los supuestos y regenerarlo.
+
 ## Cobertura variable del rastrojo
 
 La interfaz permite seleccionar **Constante** o **Serie observada**. La serie

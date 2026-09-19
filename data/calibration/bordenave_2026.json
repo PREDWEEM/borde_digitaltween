@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "method": "monotone_logit_v1",
+  "profile_id": "bordenave-2026-09-14-v1",
+  "site": "Bordenave",
+  "status": "experimental_una_campana",
+  "training_year": 2026,
+  "training_through": "2026-09-14",
+  "available_from": "2026-09-14",
+  "season_complete": false,
+  "first_interval_excluded": true,
+  "parameters": {
+    "offset": 1.5,
+    "slope": 0.975
+  },
+  "fit": {
+    "n_observations": 32,
+    "n_intervals": 31,
+    "observed_window_total_plm2": 6328.000000409999,
+    "rmse_base_plm2": 381.95577683420015,
+    "rmse_calibrated_plm2": 284.41334302855313,
+    "weighted_mse_base": 2.5217083269798852,
+    "weighted_mse_calibrated": 1.7086570454995869,
+    "regularization": 0.05,
+    "nuisance_scale_base": 8297.950687525174,
+    "nuisance_scale_calibrated": 15418.072678233702,
+    "parameter_at_bound": true
+  },
+  "model_fingerprint": "3d4c3fb9e6b3af84ab58a334cd066cb2172df358f3d2e9dd70c5785b64ea35c3",
+  "model_parameters": {
+    "cobertura_pct": 50.0,
+    "w_max": 18.8,
+    "umbral_termoinhibicion": 24.0,
+    "umbral_choque_hidrico": 45.0,
+    "exponente_kr": 0.0,
+    "latitud": -37.761671,
+    "longitud": -63.083717,
+    "latencia_jd": 15,
+    "techo_choque": 1.0,
+    "calentamiento_suelo": 0.0,
+    "umbral_primer_pico": 0.2,
+    "t_base": 2.0,
+    "t_opt": 20.0,
+    "t_crit": 30.0,
+    "tt_control": 600.0,
+    "tt_limite": 800.0
+  },
+  "source": {
+    "original_file": "valida(2).xlsx",
+    "original_sha256": "78e1b8522f7994fdc86b4ff8adcfe97efe4b8486a167f751a1251fa11ca4e11e",
+    "sheet": "Hoja1",
+    "cell_range": "A1:E33",
+    "site_assignment": "Bordenave, según solicitud del usuario; el archivo no incluye nombre de sitio o lote.",
+    "extracted_on": "2026-09-19",
+    "weather_repository_commit": "8a05c78c902f2f53c44d44cfaa608a9f8d90709e",
+    "first_interval_start": null,
+    "campaign_complete": false,
+    "observations_file": "bordenave_2026_counts.csv",
+    "observations_sha256": "c091c442aa3a4a0aa0a4b86a53531586c8ff96a7c7868a79363137ea4b921fdf",
+    "weather_file": "bordenave_2026_weather.csv",
+    "weather_sha256": "e41f2719b589b99a1d883f6dd1e6b6f06073f5b8af92be64cce9c068f0cdec88",
+    "weather_types": {
+      "Observado": 250,
+      "Provisional": 7
+    },
+    "observed_total_plm2": 7041.333333709999,
+    "replicate_count": 3,
+    "replicate_conversion_factor": 4.0
+  },
+  "validation": {
+    "kind": "hindcast_condicional_con_meteorologia_realizada",
+    "independent_season": false,
+    "n_intervals": 6,
+    "note": "Ajuste con datos hasta cada corte y evaluación del siguiente intervalo. Se usa meteorología observada/provisional, no pronósticos archivados. No demuestra transferencia a otra campaña ni precisión operativa a siete días.",
+    "rmse_base_plm2": 159.79955923288026,
+    "rmse_calibrated_plm2": 112.99818170782154,
+    "intervals_improved": 2
+  },
+  "limitations": [
+    "Una sola campaña incompleta. No se estima ni transfiere un total estacional.",
+    "Primer conteo conservado pero excluido del ajuste: inicio del intervalo desconocido.",
+    "Cobertura de 50 % y Wmax de 18.8 mm son supuestos de la configuración operativa; el archivo no informa manejo ni cobertura.",
+    "La transformación no crea cohortes en fechas bloqueadas por el motor biofísico.",
+    "Un parámetro en su límite indica que persisten diferencias estructurales.",
+    "El ajuste no reduce automáticamente la incertidumbre de asimilación.",
+    "Los gráficos de la campaña de ajuste son retrospectivos, no predicciones independientes."
+  ]
+}

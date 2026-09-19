@@ -1,0 +1,11 @@
+{
+  "original_file": "valida(2).xlsx",
+  "original_sha256": "78e1b8522f7994fdc86b4ff8adcfe97efe4b8486a167f751a1251fa11ca4e11e",
+  "sheet": "Hoja1",
+  "cell_range": "A1:E33",
+  "site_assignment": "Bordenave, según solicitud del usuario; el archivo no incluye nombre de sitio o lote.",
+  "extracted_on": "2026-09-19",
+  "weather_repository_commit": "8a05c78c902f2f53c44d44cfaa608a9f8d90709e",
+  "first_interval_start": null,
+  "campaign_complete": false
+}
