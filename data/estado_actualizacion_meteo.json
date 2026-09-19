@@ -1,5 +1,5 @@
 {
-  "ejecucion_utc": "2026-09-19T13:58:11+00:00",
+  "ejecucion_utc": "2026-09-19T20:55:10+00:00",
   "sitio": "Bordenave / INTA",
   "latitud": -37.85,
   "longitud": -63.02,
@@ -20,6 +20,7 @@
   "filas_provisionales": 9,
   "inicio_provisional": "2026-06-04",
   "fin_provisional": "2026-09-18",
+  "fin_campania": "2026-10-01",
   "fuente_pronostico": "ECMWF_IFS_ENS_025",
   "estadistico_operativo": "P50",
   "inicio_pronostico": "2026-09-19",
