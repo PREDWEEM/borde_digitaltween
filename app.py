@@ -349,8 +349,10 @@ forecast_end_label = (
     else "sin pronóstico"
 )
 st.caption(
+    "Campaña meteorológica cerrada al 01/10/2026."
+    if forecast_metadata["campaign_closed"] else
     f'Meteorología observada hasta **{pd.Timestamp(as_of).strftime("%d/%m/%Y")}** · '
-    f'pronóstico disponible: **{forecast_metadata["forecast_days_available"]}/7 días** '
+    f'pronóstico disponible: **{forecast_metadata["forecast_days_available"]}/{forecast_metadata["forecast_days_expected"]} días** '
     f'(hasta {forecast_end_label}).'
 )
 if not forecast_metadata["complete"]:
@@ -818,7 +820,7 @@ with tab_audit:
             "Valor": [
                 site_id, source_label,
                 pd.Timestamp(as_of).strftime("%d/%m/%Y"),
-                f'{forecast_metadata["forecast_days_available"]}/7 días',
+                f'{forecast_metadata["forecast_days_available"]}/{forecast_metadata["forecast_days_expected"]} días',
                 (
                     f"Serie observada; {coverage_at_cutoff:.1f} % al corte"
                     if coverage_series_for_model is not None

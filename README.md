@@ -194,3 +194,13 @@ local ni el criterio del profesional responsable.
 Consulte [COPYRIGHT.md](COPYRIGHT.md) para las condiciones de uso.
 La correspondencia con el motor original se documenta en
 [MODEL_PROVENANCE.md](MODEL_PROVENANCE.md).
+
+## Cierre meteorológico de la campaña 2026
+
+La serie operativa termina el **1 de octubre de 2026, inclusive**. El límite
+se aplica a SIGA, al puente provisional, al pronóstico ECMWF, a la consulta
+Open-Meteo y a los archivos cargados en la aplicación. Después del cierre,
+las actualizaciones pueden completar o reemplazar datos provisionales por
+observaciones hasta esa fecha, sin agregar días posteriores ni exigir
+pronósticos futuros. La interfaz reduce el horizonte esperado al acercarse
+al cierre. Las referencias históricas de emergencia mantienen su extensión.

@@ -32,6 +32,8 @@ import numpy as np
 import pandas as pd
 import requests
 
+from campaign import CAMPANIA_END
+
 
 LATITUD = float(os.getenv("LATITUD", "-37.85"))
 LONGITUD = float(os.getenv("LONGITUD", "-63.02"))
@@ -461,6 +463,7 @@ def obtener_siga_dataframe(
     fecha_fin: date,
     archivo_forzado: Path | None = None,
 ) -> tuple[pd.DataFrame, str]:
+    fecha_fin = min(fecha_fin, CAMPANIA_END)
     errores: list[str] = []
 
     if SIGA_URL_TEMPLATE and archivo_forzado is None:
@@ -770,7 +773,7 @@ def consultar_ecmwf_ens() -> dict[str, Any]:
         "timezone": ZONA_HORARIA,
         "models": MODELO_ECMWF_ENS,
         "hourly": "temperature_2m,precipitation",
-        "forecast_days": HORIZONTE_DIAS,
+        "forecast_days": min(HORIZONTE_DIAS, (CAMPANIA_END - hoy_argentina()).days + 1),
         "temperature_unit": "celsius",
         "precipitation_unit": "mm",
         "timeformat": "iso8601",
@@ -884,6 +887,8 @@ def procesar_ecmwf_ens(datos: dict[str, Any]) -> pd.DataFrame:
     elev_grid = datos.get("elevation", np.nan)
 
     for fecha, grupo in todos.groupby("Fecha"):
+        if pd.Timestamp(fecha).date() > CAMPANIA_END:
+            continue
         n_validos = int(grupo["miembro"].nunique())
         if n_validos < requeridos:
             raise ValueError(
@@ -948,8 +953,13 @@ def procesar_ecmwf_ens(datos: dict[str, Any]) -> pd.DataFrame:
 
 
 def cargar_pronostico_ecmwf() -> pd.DataFrame:
+    if hoy_argentina() > CAMPANIA_END:
+        return asegurar_columnas(pd.DataFrame())
     datos = consultar_ecmwf_ens()
     pronostico = procesar_ecmwf_ens(datos)
+    pronostico = pronostico.loc[
+        pd.to_datetime(pronostico["Fecha"]).dt.date <= CAMPANIA_END
+    ].copy()
     DIRECTORIO_PRONOSTICOS.mkdir(parents=True, exist_ok=True)
     marca = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     archivo = (
@@ -985,6 +995,8 @@ def validar_serie_final(df: pd.DataFrame, fecha_final: date) -> None:
     fechas = pd.to_datetime(df["Fecha"], errors="coerce")
     if fechas.isna().any():
         raise ValueError("La serie final contiene fechas inválidas.")
+    if fecha_final > CAMPANIA_END or (fechas.dt.date > CAMPANIA_END).any():
+        raise ValueError("La serie supera el cierre de campaña del 01/10/2026.")
     if fechas.duplicated().any():
         raise ValueError("La serie final contiene fechas duplicadas.")
 
@@ -1025,7 +1037,7 @@ def validar_serie_final(df: pd.DataFrame, fecha_final: date) -> None:
         raise ValueError("Un dato provisional fue ubicado en hoy o el futuro.")
     if (fechas[pron] < hoy).any():
         raise ValueError("Un pronóstico fue ubicado en una fecha vencida.")
-    if not pron.any():
+    if hoy.date() <= CAMPANIA_END and not pron.any():
         raise ValueError("La serie final no contiene pronóstico.")
 
     pares = (
@@ -1052,7 +1064,7 @@ def construir_meteo_daily(
     siga_file: Path | None = None,
 ) -> pd.DataFrame:
     hoy = hoy_argentina()
-    ayer = hoy - timedelta(days=1)
+    ayer = min(hoy - timedelta(days=1), CAMPANIA_END)
 
     observaciones, estado_siga = obtener_siga_dataframe(
         CAMPANIA_START,
@@ -1071,9 +1083,10 @@ def construir_meteo_daily(
 
     pronostico = cargar_pronostico_ecmwf()
     pronostico = pronostico.loc[
-        pd.to_datetime(pronostico["Fecha"]).dt.date >= hoy
+        (pd.to_datetime(pronostico["Fecha"]).dt.date >= hoy)
+        & (pd.to_datetime(pronostico["Fecha"]).dt.date <= CAMPANIA_END)
     ].copy()
-    if pronostico.empty:
+    if hoy <= CAMPANIA_END and pronostico.empty:
         raise ValueError("ECMWF ENS no entregó el pronóstico desde hoy.")
 
     combinado = pd.concat(
@@ -1092,7 +1105,10 @@ def construir_meteo_daily(
     combinado = combinado.drop_duplicates(subset=["Fecha_dt"], keep="first")
     combinado = combinado.sort_values("Fecha_dt")
 
-    fecha_final = pd.to_datetime(pronostico["Fecha"]).max().date()
+    fecha_final = (
+        pd.to_datetime(pronostico["Fecha"]).max().date()
+        if not pronostico.empty else CAMPANIA_END
+    )
     combinado = combinado.loc[
         (combinado["Fecha_dt"].dt.date >= CAMPANIA_START)
         & (combinado["Fecha_dt"].dt.date <= fecha_final)
@@ -1124,13 +1140,14 @@ def construir_meteo_daily(
         "fin_provisional": (
             str(provisionales["Fecha"].max()) if not provisionales.empty else None
         ),
-        "fuente_pronostico": "ECMWF_IFS_ENS_025",
+        "fin_campania": CAMPANIA_END.isoformat(),
+        "fuente_pronostico": "ECMWF_IFS_ENS_025" if not pronostico.empty else None,
         "estadistico_operativo": "P50",
-        "inicio_pronostico": str(pronostico["Fecha"].min()),
-        "fin_pronostico": str(pronostico["Fecha"].max()),
+        "inicio_pronostico": str(pronostico["Fecha"].min()) if not pronostico.empty else None,
+        "fin_pronostico": str(pronostico["Fecha"].max()) if not pronostico.empty else None,
         "miembros_validos_min": int(
             pd.to_numeric(pronostico["N_miembros"], errors="coerce").min()
-        ),
+        ) if not pronostico.empty else None,
         "huecos_finales": calcular_huecos(combinado, CAMPANIA_START, fecha_final),
     }
     ARCHIVO_ESTADO.parent.mkdir(parents=True, exist_ok=True)
@@ -1154,7 +1171,7 @@ def construir_meteo_daily(
 
 def validar_siga(siga_file: Path | None = None) -> None:
     hoy = hoy_argentina()
-    ayer = hoy - timedelta(days=1)
+    ayer = min(hoy - timedelta(days=1), CAMPANIA_END)
     observaciones, estado_siga = obtener_siga_dataframe(
         CAMPANIA_START,
         ayer,
