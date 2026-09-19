@@ -100,8 +100,8 @@ advertencia de horizonte incompleto; no presupone que la campaña terminó.
 
 ## Calibración por sitio con observaciones 2026
 
-La pestaña **Calibración por sitio** contiene los 32 muestreos del archivo
-`valida(2).xlsx`, hoja `Hoja1`, del 02/02 al 14/09/2026, asignados a Bordenave
+La pestaña **Calibración por sitio** contiene las 33 fechas del archivo
+`valida(3).xlsx`, hoja `Hoja1`, del 10/01 al 14/09/2026, asignadas a Bordenave
 según la solicitud del autor. Se conservan las tres repeticiones y la media
 original en `data/calibration/bordenave_2026_counts.csv`. El factor inferido
 de conversión a m² es 4. El total registrado es **7041,33 plantas/m²** y no
@@ -119,9 +119,11 @@ puede modificar el progreso relativo y la distribución del flujo, pero no
 crear una cohorte donde los filtros biofísicos bloquean la emergencia.
 
 El ajuste compara las sumas del flujo entre fechas de conteo con los flujos
-observados. Hay **31 intervalos utilizables**, incluido el de 14 días entre
-el 1 y el 15 de junio. El primer conteo se conserva en el archivo original,
-pero no participa del ajuste porque se desconoce el inicio de su intervalo.
+observados. Hay **32 intervalos utilizables**, incluido el de 14 días entre
+el 1 y el 15 de junio. El archivo actualizado incorpora un registro de cero
+el **10/01/2026**. Ese registro delimita el primer intervalo, de **23 días**,
+hasta el 02/02/2026, cuyo conteo de **713,33 plantas/m²** participa ahora del
+ajuste. No se infiere ausencia de emergencia antes del 10 de enero.
 No se interpolan observaciones diarias. Se pondera por el error estándar de
 las repeticiones con un piso común del 10 % del máximo flujo observado
 (mínimo 1 planta/m²). El ajuste se regulariza hacia la identidad y se limita
@@ -159,20 +161,25 @@ deberá configurarse su meteorología; este cambio no modifica ese cierre.
 
 El ajuste inicial usa cobertura constante del **50 %** y Wmax **18,8 mm**,
 que son los valores de la interfaz. El archivo de conteos no aporta cobertura,
-manejo ni inicio del primer intervalo. La meteorología congelada contiene
+manejo. La meteorología congelada contiene
 250 días SIGA y 7 provisionales, hasta el 14/09/2026. Los cambios de cobertura
 y Wmax en la interfaz siguen siendo posibles, pero no implican que el perfil
 se haya validado bajo esas condiciones.
 
 El perfil es **experimental, de una sola campaña incompleta**. El RMSE de
-ajuste por intervalo pasa de **381,96 a 284,41 plantas/m²** sobre los datos
-empleados para estimarlo. El desplazamiento alcanza el límite de +1,5,
-señal de diferencias estructurales que esta transformación no resuelve.
+ajuste por intervalo pasa de **393,13 a 356,96 plantas/m²** sobre los datos
+empleados para estimarlo. Ninguno de los dos parámetros del perfil final
+alcanza los límites permitidos. Estos RMSE corresponden a 32 intervalos:
+no son directamente comparables con los de la revisión anterior, que excluía
+el conteo del 2 de febrero y ajustaba sobre 31 intervalos.
 
 Se incluyen seis evaluaciones temporales: se ajusta sólo con datos hasta
 cada corte y se evalúa el siguiente intervalo con meteorología
-observada/provisional. El RMSE conjunto pasa de **159,80 a 113,00 plantas/m²**,
-pero sólo dos intervalos mejoran; la reducción se concentra en uno de ellos.
+observada/provisional. Se conservan las seis fechas de corte de la revisión
+anterior, registradas en `validation_cutoffs`, para que la incorporación de
+una fecha inicial no cambie los intervalos evaluados. El RMSE conjunto pasa
+de **139,50 a 106,80 plantas/m²**, pero sólo un intervalo mejora; la reducción
+se concentra en ese intervalo.
 No son pronósticos archivados ni validación en otra campaña. No se reduce
 automáticamente la incertidumbre del gemelo ni se infiere precisión para 2027.
 
@@ -188,6 +195,8 @@ del archivo original, observaciones, meteorología y modelo, y produce
 `bordenave_2026.json`, `bordenave_2026_fit.csv` y `bordenave_2026_holdout.csv`.
 No descarga datos ni reentrena la red. Para actualizar el perfil, incorporar
 los nuevos conteos y su meteorología, revisar los supuestos y regenerarlo.
+La identificación del perfil incluye una huella de sus datos y configuración,
+por lo que cambia ante revisiones aunque la última fecha de conteo sea la misma.
 
 ## Cobertura variable del rastrojo
 

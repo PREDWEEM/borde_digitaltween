@@ -32,6 +32,9 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
     observations_path, weather_path, output_path = map(
         Path, (observations_path, weather_path, output_path)
     )
+    source_metadata = {}
+    if source_metadata_path:
+        source_metadata = json.loads(Path(source_metadata_path).read_text(encoding="utf-8"))
     raw, metadata = read_observation_file(observations_path)
     weather = pd.read_csv(weather_path)
     weather["Fecha"] = pd.to_datetime(weather["Fecha"], errors="raise")
@@ -55,11 +58,23 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
     )
     profile, comparison = fit_site_calibration(trajectory, prepared, site=site)
 
-    # Seis cortes, cada cuatro muestreos. Sólo conteos y meteorología hasta el
+    # Mantener los cortes de una revisión previa cuando están registrados,
+    # aunque se agregue una fecha inicial. Sólo conteos y meteorología hasta el
     # corte entran al ajuste. Para evaluar el intervalo siguiente se usa su
     # meteorología realizada: es un hindcast condicional, no pronóstico archivado.
     holdout_rows = []
-    for count in range(9, len(prepared), 4):
+    validation_cutoffs = source_metadata.get("validation_cutoffs")
+    if validation_cutoffs:
+        counts = []
+        for value in validation_cutoffs:
+            cutoff = pd.Timestamp(value)
+            matches = prepared.index[prepared["Fecha"].eq(cutoff)].tolist()
+            if not matches or matches[0] < 6 or matches[0] + 1 >= len(prepared):
+                raise ValueError(f"Corte de evaluación no disponible: {value}")
+            counts.append(matches[0] + 1)
+    else:
+        counts = range(9, len(prepared), 4)
+    for count in counts:
         training = prepared.iloc[:count].copy()
         cutoff = pd.Timestamp(training["Fecha"].iloc[-1])
         target = prepared.iloc[count]
@@ -103,10 +118,17 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
                 < (holdout["Base_PLM2"] - y).abs()
             ).sum()),
         })
-    source_metadata = {}
-    if source_metadata_path:
-        source_metadata = json.loads(Path(source_metadata_path).read_text(encoding="utf-8"))
+    first_date = pd.Timestamp(prepared["Fecha"].iloc[0]).date().isoformat()
+    initial_zero = bool(prepared["Flujo_observado_PLM2"].iloc[0] == 0)
+    initial_note = (
+        f"El registro inicial de cero del {first_date} delimita el primer intervalo; "
+        "no se infiere ausencia de emergencia en fechas anteriores."
+        if initial_zero else
+        "Primer conteo conservado pero excluido del ajuste: inicio del intervalo desconocido."
+    )
     profile.update({
+        "observations_start": first_date,
+        "initial_zero_reference": initial_zero,
         "model_fingerprint": model_fingerprint(ROOT),
         "model_parameters": asdict(parameters),
         "source": {
@@ -123,7 +145,7 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
         "validation": validation,
         "limitations": [
             "Una sola campaña incompleta. No se estima ni transfiere un total estacional.",
-            "Primer conteo conservado pero excluido del ajuste: inicio del intervalo desconocido.",
+            initial_note,
             "Cobertura de 50 % y Wmax de 18.8 mm son supuestos de la configuración operativa; el archivo no informa manejo ni cobertura.",
             "La transformación no crea cohortes en fechas bloqueadas por el motor biofísico.",
             "Un parámetro en su límite indica que persisten diferencias estructurales.",
@@ -131,6 +153,16 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
             "Los gráficos de la campaña de ajuste son retrospectivos, no predicciones independientes.",
         ],
     })
+    # Cambiar la identidad aun si una revisión conserva la última fecha.
+    input_signature = sha256(json.dumps({
+        "observations": profile["source"]["observations_sha256"],
+        "weather": profile["source"]["weather_sha256"],
+        "model": profile["model_fingerprint"],
+        "parameters": profile["model_parameters"],
+        "method": profile["method"],
+        "calibration_parameters": profile["parameters"],
+    }, sort_keys=True).encode()).hexdigest()
+    profile["profile_id"] += "-" + input_signature[:10]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(profile, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"

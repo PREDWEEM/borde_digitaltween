@@ -134,15 +134,19 @@ def real_data():
 
 def test_source_replications_units_and_irregular_intervals(real_data):
     trajectory, raw, prepared, metadata = real_data
-    assert len(raw) == 32 and metadata["n_repeticiones"] == 3
+    assert len(raw) == 33 and metadata["n_repeticiones"] == 3
     assert metadata["factor_conversion_repeticiones"] == pytest.approx(4.)
     assert raw.iloc[:, -1].sum() == pytest.approx(7041.33333371)
     assert (raw.iloc[:, 1:4].mean(axis=1) * 4).to_numpy() == pytest.approx(raw.iloc[:, -1].to_numpy())
     _, intervals = calibration_intervals(trajectory, prepared)
-    assert intervals.iloc[0]["Inicio_exclusivo"] == pd.Timestamp("2026-02-02")
+    assert intervals.iloc[0]["Inicio_exclusivo"] == pd.Timestamp("2026-01-10")
+    assert intervals.iloc[0]["Fecha"] == pd.Timestamp("2026-02-02")
+    assert intervals.iloc[0]["Dias_intervalo"] == 23
+    assert intervals.iloc[0]["Observado_PLM2"] == pytest.approx(713.3333333)
     assert intervals.loc[intervals.Fecha.eq("2026-06-15"), "Dias_intervalo"].iloc[0] == 14
     assert (intervals["Dias_intervalo"] == 7).sum() == 30
-    assert len(intervals) == 31
+    assert len(intervals) == 32
+    assert intervals.Observado_PLM2.sum() == pytest.approx(raw.iloc[:, -1].sum())
 
 
 def test_fit_matches_persisted_profile_and_does_not_mutate_network(real_data):

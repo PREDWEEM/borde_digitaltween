@@ -800,15 +800,26 @@ with tab_calibration:
         source = calibration_profile["source"]
         st.write(
             f'**{fit["n_observations"]} muestreos**, con tres repeticiones, del '
-            '**02/02/2026 al 14/09/2026**. Se conserva el conteo original de cada fecha '
+            f'**{pd.Timestamp(calibration_profile["observations_start"]).strftime("%d/%m/%Y")} '
+            f'al {pd.Timestamp(calibration_profile["training_through"]).strftime("%d/%m/%Y")}**. '
+            'Se conserva el conteo original de cada fecha '
             'y se ajustan los intervalos entre muestreos, incluido el de 14 días de junio.'
         )
         st.caption(
             f'Total registrado: {source["observed_total_plm2"]:.1f} plantas/m². '
-            'Es un total observado parcial, no el potencial estacional del lote. '
-            'El primer conteo se conserva pero se excluye del ajuste porque falta '
-            'la fecha de inicio de ese intervalo.'
+            'Es un total observado parcial, no el potencial estacional del lote.'
         )
+        if calibration_profile.get("initial_zero_reference"):
+            st.caption(
+                'El registro inicial de cero delimita el primer intervalo. El conteo '
+                'del 02/02/2026 se incluye ahora en el ajuste del intervalo de 23 días '
+                'desde el 10/01/2026.'
+            )
+        else:
+            st.caption(
+                'El primer conteo se conserva pero se excluye del ajuste porque falta '
+                'la fecha de inicio de ese intervalo.'
+            )
         calibration_metrics = st.columns(3)
         calibration_metrics[0].metric("Intervalos de ajuste", fit["n_intervals"])
         calibration_metrics[1].metric("RMSE base · ajuste", f'{fit["rmse_base_plm2"]:.1f} plantas/m²')
