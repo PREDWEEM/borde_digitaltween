@@ -9,11 +9,20 @@ import numpy as np
 import pandas as pd
 
 
+EXCLUDED_YEARS = ("2010", "2015")
+EXCLUDED_SITES = ("balcarce", "san pedro")
+
+
 def load_seasonal_reference(
     source: str | Path,
-    excluded_years: tuple[str, ...] = ("2010", "2015"),
+    excluded_years: tuple[str, ...] = EXCLUDED_YEARS,
+    excluded_sites: tuple[str, ...] = EXCLUDED_SITES,
 ) -> pd.DataFrame:
-    """Construye percentiles históricos de progreso acumulado por día juliano."""
+    """Construye la referencia de Bordenave excluyendo años y sitios indicados.
+
+    Balcarce y San Pedro se excluyen antes de calcular todos los percentiles.
+    Los nombres son obligatorios para aplicar los filtros de forma verificable.
+    """
     with Path(source).open("rb") as handle:
         payload = pickle.load(handle)
 
@@ -26,11 +35,17 @@ def load_seasonal_reference(
     names = [str(value) for value in payload.get("names", payload.get("files", []))]
     if curves.ndim != 2 or len(julian_days) != curves.shape[1]:
         raise ValueError("La referencia histórica no contiene curvas compatibles.")
-    if names and len(names) == len(curves):
-        keep = np.array(
-            [not any(year in name for year in excluded_years) for name in names]
-        )
-        curves = curves[keep]
+    if len(names) != len(curves) or any(not name.strip() for name in names):
+        raise ValueError("La referencia requiere un nombre por curva para filtrar años y localidades.")
+    sites = tuple(" ".join(site.casefold().split()) for site in excluded_sites)
+    keep = np.array([
+        not any(year in name for year in excluded_years)
+        and not any(site in " ".join(name.casefold().split()) for site in sites)
+        for name in names
+    ], dtype=bool)
+    excluded_names = [name for name, selected in zip(names, keep) if not selected]
+    names = [name for name, selected in zip(names, keep) if selected]
+    curves = curves[keep]
     curves = np.clip(curves, 0.0, None)
     totals = curves.sum(axis=1, keepdims=True)
     valid = totals[:, 0] > 1e-12
@@ -44,6 +59,8 @@ def load_seasonal_reference(
             "Progreso_Mediano": np.median(progress, axis=0),
             "Progreso_P90": np.quantile(progress, 0.90, axis=0),
             "N_Campanas": int(valid.sum()),
+            "Campanas": ", ".join(name for name, selected in zip(names, valid) if selected),
+            "Campanas_Excluidas": ", ".join(excluded_names),
         }
     )
 

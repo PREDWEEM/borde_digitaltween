@@ -307,6 +307,7 @@ parameters = ModelParameters(
 )
 model = load_model()
 seasonal_reference = load_progress_reference()
+reference_campaigns = int(seasonal_reference["N_Campanas"].iloc[0])
 store = load_store()
 coverage_observations = store.coverage_observations(site_id)
 active_coverage = coverage_observations[
@@ -384,6 +385,11 @@ st.caption(
     f'Meteorología observada hasta **{pd.Timestamp(as_of).strftime("%d/%m/%Y")}** · '
     f'pronóstico disponible: **{forecast_metadata["forecast_days_available"]}/{forecast_metadata["forecast_days_expected"]} días** '
     f'(hasta {forecast_end_label}).'
+)
+st.caption(
+    f"Referencia estacional: {reference_campaigns} curvas históricas. "
+    "Excluye Balcarce, San Pedro y las campañas 2010 y 2015. "
+    "La selección conserva Tres Arroyos 2025 y ocho series identificadas por año."
 )
 if not forecast_metadata["complete"]:
     st.warning(
@@ -925,6 +931,8 @@ with tab_scenarios:
 
 with tab_audit:
     st.subheader("Trazabilidad científica")
+    st.write("Campañas utilizadas: " + seasonal_reference["Campanas"].iloc[0])
+    st.caption("Campañas excluidas: " + seasonal_reference["Campanas_Excluidas"].iloc[0])
     st.write(calibration_audit["reason"])
     if calibration_audit["profile_id"]:
         st.caption(f'Perfil: {calibration_audit["profile_id"]}')

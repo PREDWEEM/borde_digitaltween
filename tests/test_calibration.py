@@ -158,6 +158,10 @@ def test_fit_matches_persisted_profile_and_does_not_mutate_network(real_data):
     assert profile["fit"]["rmse_base_plm2"] == pytest.approx(saved["fit"]["rmse_base_plm2"])
     assert profile["fit"]["rmse_calibrated_plm2"] == pytest.approx(saved["fit"]["rmse_calibrated_plm2"])
     assert model_fingerprint(ROOT) == fingerprint == saved["model_fingerprint"]
+    assert saved["seasonal_reference"]["n_campaigns"] == 9
+    assert saved["seasonal_reference"]["excluded_sites"] == ["balcarce", "san pedro"]
+    assert "balcarce" not in saved["seasonal_reference"]["campaigns"].lower()
+    assert "san pedro" not in saved["seasonal_reference"]["campaigns"].lower()
 
 
 @pytest.mark.parametrize("fault", ["negative", "duplicate", "missing_weather", "nan"])

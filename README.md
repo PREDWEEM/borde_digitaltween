@@ -73,11 +73,21 @@ informa cuántos días de pronóstico están realmente disponibles.
 
 La curva parcial no se normaliza por el total existente al final de esos siete
 días. PREDWEEM utiliza como referencia el progreso acumulado mediano de las
-campañas históricas del modelo, excluyendo 2010 y 2015, y ancla la escala en la
+campañas históricas seleccionadas, excluyendo 2010, 2015, Balcarce y San Pedro,
+y ancla la escala en la
 fecha del estado. De esta manera, el final del pronóstico no se interpreta como
 100 % de la emergencia. Las temperaturas y precipitaciones pronosticadas
 determinan el incremento de emergencia de los siete días siguientes. Los
 conteos de campo actualizan posteriormente ese estado mediante la asimilación.
+
+La referencia utiliza **nueve curvas**: 2008, 2009, 2011, 2012, 2013, 2014,
+2023 y 2024 (archivos identificados sólo por año), y Tres Arroyos 2025.
+No se atribuyen todas estas series a Bordenave. Balcarce 2025 y San Pedro 2025
+se excluyen antes de calcular P10, mediana y P90. La selección se aplica tanto
+a la aplicación y los escenarios como a la generación de la calibración 2026.
+La interfaz y el perfil JSON registran los nombres utilizados y excluidos.
+El clasificador original se conserva intacto; sus curvas excluidas no
+intervienen en esta referencia estacional.
 
 Sin siete días futuros, el sistema conserva el estado disponible y muestra una
 advertencia de horizonte incompleto; no presupone que la campaña terminó.
@@ -167,7 +177,7 @@ y Wmax en la interfaz siguen siendo posibles, pero no implican que el perfil
 se haya validado bajo esas condiciones.
 
 El perfil es **experimental, de una sola campaña incompleta**. El RMSE de
-ajuste por intervalo pasa de **393,13 a 356,96 plantas/m²** sobre los datos
+ajuste por intervalo pasa de **393,13 a 356,93 plantas/m²** sobre los datos
 empleados para estimarlo. Ninguno de los dos parámetros del perfil final
 alcanza los límites permitidos. Estos RMSE corresponden a 32 intervalos:
 no son directamente comparables con los de la revisión anterior, que excluía
@@ -178,10 +188,14 @@ cada corte y se evalúa el siguiente intervalo con meteorología
 observada/provisional. Se conservan las seis fechas de corte de la revisión
 anterior, registradas en `validation_cutoffs`, para que la incorporación de
 una fecha inicial no cambie los intervalos evaluados. El RMSE conjunto pasa
-de **139,50 a 106,80 plantas/m²**, pero sólo un intervalo mejora; la reducción
+de **147,97 a 106,59 plantas/m²**, pero sólo un intervalo mejora; la reducción
 se concentra en ese intervalo.
 No son pronósticos archivados ni validación en otra campaña. No se reduce
 automáticamente la incertidumbre del gemelo ni se infiere precisión para 2027.
+Estos diagnósticos se regeneraron tras excluir Balcarce y San Pedro de la
+referencia. Los conteos, la meteorología fija, los cortes y los pesos neuronales
+son los mismos. El perfil conserva offset 0,50 y slope 1,35, con una nueva
+identidad y huella compatibles con la selección de nueve curvas.
 
 ### Reproducción
 
@@ -267,8 +281,10 @@ y el potencial estacional mantiene su propia incertidumbre. La interfaz muestra
 por separado el acumulado estimado en plantas/m², el potencial estacional y el
 progreso relativo.
 
-### Diagnóstico retrospectivo del corte al 5 de abril
+### Diagnóstico anterior del corte al 5 de abril
 
+El siguiente diagnóstico corresponde a la referencia anterior, que incluía
+Balcarce y San Pedro; no describe la versión actual de nueve curvas.
 Con los datos Bordenave 2026 disponibles únicamente hasta el 30 de marzo, el
 nuevo método utilizó nueve flujos, estimó un potencial de 7770 plantas/m² y un
 estado actualizado de 75,3 %. El valor retrospectivo calculado al completar la

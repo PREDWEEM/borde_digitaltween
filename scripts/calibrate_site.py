@@ -24,7 +24,7 @@ from predweem_twin.calibration import (  # noqa: E402
 )
 from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem  # noqa: E402
 from predweem_twin.observations import prepare_observations, read_observation_file  # noqa: E402
-from predweem_twin.seasonal import load_seasonal_reference  # noqa: E402
+from predweem_twin.seasonal import EXCLUDED_SITES, EXCLUDED_YEARS, load_seasonal_reference  # noqa: E402
 
 
 def build_calibration(observations_path, weather_path, output_path, site="Bordenave",
@@ -131,6 +131,14 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
         "initial_zero_reference": initial_zero,
         "model_fingerprint": model_fingerprint(ROOT),
         "model_parameters": asdict(parameters),
+        "seasonal_reference": {
+            "excluded_years": list(EXCLUDED_YEARS),
+            "excluded_sites": list(EXCLUDED_SITES),
+            "n_campaigns": int(reference["N_Campanas"].iloc[0]),
+            "campaigns": reference["Campanas"].iloc[0],
+            "excluded_campaigns": reference["Campanas_Excluidas"].iloc[0],
+            "note": "La selección conserva Tres Arroyos 2025 y ocho series identificadas sólo por año; no se atribuyen todas a Bordenave.",
+        },
         "source": {
             **source_metadata,
             "observations_file": observations_path.name,
@@ -159,6 +167,7 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
         "weather": profile["source"]["weather_sha256"],
         "model": profile["model_fingerprint"],
         "parameters": profile["model_parameters"],
+        "seasonal_reference": profile["seasonal_reference"],
         "method": profile["method"],
         "calibration_parameters": profile["parameters"],
     }, sort_keys=True).encode()).hexdigest()

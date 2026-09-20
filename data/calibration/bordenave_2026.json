@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "method": "monotone_logit_v1",
-  "profile_id": "bordenave-2026-09-14-v1-b0dc23f94c",
+  "profile_id": "bordenave-2026-09-14-v1-433c722cd8",
   "site": "Bordenave",
   "status": "experimental_una_campana",
   "training_year": 2026,
@@ -18,17 +18,17 @@
     "n_intervals": 32,
     "observed_window_total_plm2": 7041.333333709999,
     "rmse_base_plm2": 393.12945756435056,
-    "rmse_calibrated_plm2": 356.9615048241195,
-    "weighted_mse_base": 2.236482721110099,
-    "weighted_mse_calibrated": 1.9127658071385847,
+    "rmse_calibrated_plm2": 356.92742430950364,
+    "weighted_mse_base": 2.2364827211100993,
+    "weighted_mse_calibrated": 1.912595128926844,
     "regularization": 0.05,
-    "nuisance_scale_base": 7041.333333710004,
-    "nuisance_scale_calibrated": 7041.333333709999,
+    "nuisance_scale_base": 7044.15325094417,
+    "nuisance_scale_calibrated": 7041.44399421072,
     "parameter_at_bound": false
   },
   "observations_start": "2026-01-10",
   "initial_zero_reference": true,
-  "model_fingerprint": "3d4c3fb9e6b3af84ab58a334cd066cb2172df358f3d2e9dd70c5785b64ea35c3",
+  "model_fingerprint": "441a1b6f97dbb378e58168da5da171f4fc438cfeb7a0babcfbae373b4ae1e92c",
   "model_parameters": {
     "cobertura_pct": 50.0,
     "w_max": 18.8,
@@ -46,6 +46,20 @@
     "t_crit": 30.0,
     "tt_control": 600.0,
     "tt_limite": 800.0
+  },
+  "seasonal_reference": {
+    "excluded_years": [
+      "2010",
+      "2015"
+    ],
+    "excluded_sites": [
+      "balcarce",
+      "san pedro"
+    ],
+    "n_campaigns": 9,
+    "campaigns": "2012.xlsx, 2009.xlsx, 2013.xlsx, 2024.xlsx, 2023.xlsx, 2014.xlsx, 2008.xlsx, 2011.xlsx, test -emerel tresas 2025.xlsx",
+    "excluded_campaigns": "2015.xlsx, 2010.xlsx, emererel2025 balcarce.xlsx, emrel sp 2025 san pedro.xlsx",
+    "note": "La selección conserva Tres Arroyos 2025 y ocho series identificadas sólo por año; no se atribuyen todas a Bordenave."
   },
   "source": {
     "original_file": "valida(3).xlsx",
@@ -85,8 +99,8 @@
     "independent_season": false,
     "n_intervals": 6,
     "note": "Ajuste con datos hasta cada corte y evaluación del siguiente intervalo. Se usa meteorología observada/provisional, no pronósticos archivados. No demuestra transferencia a otra campaña ni precisión operativa a siete días.",
-    "rmse_base_plm2": 139.5019048817026,
-    "rmse_calibrated_plm2": 106.80482463464661,
+    "rmse_base_plm2": 147.9694935225279,
+    "rmse_calibrated_plm2": 106.59001180940587,
     "intervals_improved": 1
   },
   "limitations": [

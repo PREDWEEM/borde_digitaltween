@@ -30,3 +30,23 @@ La extracción conserva:
 La asimilación y la persistencia son componentes nuevos y están aislados en
 `predweem_twin/assimilation.py` y `predweem_twin/storage.py`.
 
+## Selección histórica de Bordenave
+
+Por indicación del usuario, la normalización estacional excluye las curvas
+`emererel2025 balcarce.xlsx` y `emrel sp 2025 san pedro.xlsx`, además de 2010 y
+2015. El filtro por localidad ignora mayúsculas y espacios repetidos y se
+aplica antes de acumular las curvas y calcular sus percentiles. Los nombres
+son obligatorios para impedir que una referencia sin identificación omita
+silenciosamente las exclusiones.
+
+Quedan nueve curvas: 2008, 2009, 2011, 2012, 2013, 2014, 2023, 2024 y
+`test -emerel tresas 2025.xlsx`. Los primeros ocho archivos sólo identifican
+el año y no permiten atribuir aquí su localidad. El clasificador y la ANN
+no se modifican; esta selección afecta exclusivamente la referencia
+estacional del gemelo y las operaciones que dependen de ella.
+
+Aplicación, escenarios y generador de calibración utilizan la misma selección.
+El perfil `data/calibration/bordenave_2026.json` registra campañas incluidas,
+excluidas y cantidad. Se regeneran perfil y diagnósticos con los mismos datos
+2026 y cortes, porque el fingerprint incluye `predweem_twin/seasonal.py`.
+No se modifica el mecanismo de anclaje a la mediana histórica en esta revisión.
