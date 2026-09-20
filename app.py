@@ -69,8 +69,13 @@ def load_model():
     return PracticalANNModel.from_directory(BASE / "models")
 
 
-@st.cache_data(show_spinner=False)
 def load_progress_reference():
+    """Carga la selección vigente en cada ejecución.
+
+    Esta tabla es pequeña. Una caché sin argumentos puede conservar las curvas
+    y columnas anteriores cuando cambia el cargador importado, incluyendo
+    localidades que ya fueron excluidas de la referencia.
+    """
     return load_seasonal_reference(BASE / "models" / "modelo_clusters_k3.pkl")
 
 
