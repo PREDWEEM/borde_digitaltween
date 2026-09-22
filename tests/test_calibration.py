@@ -12,7 +12,7 @@ from predweem_twin.calibration import (
 )
 from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
 from predweem_twin.observations import prepare_observations
-from predweem_twin.seasonal import load_seasonal_reference
+from predweem_twin.seasonal import load_local_seasonal_reference
 
 
 ROOT = Path(__file__).parents[1]
@@ -122,7 +122,7 @@ def test_known_transformation_can_be_learned_without_seasonal_total():
 def real_data():
     weather = pd.read_csv(DATA / "bordenave_2026_weather.csv")
     model = PracticalANNModel.from_directory(ROOT / "models")
-    reference = load_seasonal_reference(ROOT / "models/modelo_clusters_k3.pkl")
+    reference = load_local_seasonal_reference(ROOT, as_of="2026-09-14")
     trajectory = run_predweem(
         weather, model, ModelParameters(w_max=18.8),
         normalization_as_of="2026-09-14", seasonal_reference=reference,
@@ -162,6 +162,8 @@ def test_fit_matches_persisted_profile_and_does_not_mutate_network(real_data):
     assert saved["seasonal_reference"]["excluded_sites"] == ["balcarce", "san pedro"]
     assert "balcarce" not in saved["seasonal_reference"]["campaigns"].lower()
     assert "san pedro" not in saved["seasonal_reference"]["campaigns"].lower()
+    assert "tresas" not in saved["seasonal_reference"]["campaigns"].lower()
+    assert "bordenave_2026_counts.csv" in saved["seasonal_reference"]["campaigns"]
 
 
 @pytest.mark.parametrize("fault", ["negative", "duplicate", "missing_weather", "nan"])

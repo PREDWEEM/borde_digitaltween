@@ -19,13 +19,13 @@ def test_bordenave_reference_excludes_balcarce_san_pedro_2010_and_2015():
         payload = pickle.load(handle)
     expected_names = {
         "2008.xlsx", "2009.xlsx", "2011.xlsx", "2012.xlsx", "2013.xlsx",
-        "2014.xlsx", "2023.xlsx", "2024.xlsx", "test -emerel tresas 2025.xlsx",
+        "2014.xlsx", "2023.xlsx", "2024.xlsx",
     }
     selected = [i for i, name in enumerate(payload["names"]) if name in expected_names]
     curves = np.asarray(payload["curves_interp"])[selected]
     progress = np.cumsum(curves, axis=1) / curves.sum(axis=1, keepdims=True)
-    assert len(selected) == 9
-    assert reference.N_Campanas.eq(9).all()
+    assert len(selected) == 8
+    assert reference.N_Campanas.eq(8).all()
     assert set(reference.Campanas.iloc[0].split(", ")) == expected_names
     for quantile, column in [(0.1, "Progreso_P10"), (.5, "Progreso_Mediano"), (.9, "Progreso_P90")]:
         np.testing.assert_allclose(reference[column], np.quantile(progress, quantile, axis=0))
@@ -37,7 +37,7 @@ def test_excluded_curves_cannot_change_the_reference(tmp_path):
     with source.open("rb") as handle:
         payload = pickle.load(handle)
     for i, name in enumerate(payload["names"]):
-        if "balcarce" in name.lower() or "san pedro" in name.lower():
+        if any(value in name.lower() for value in ("balcarce", "san pedro", "2010", "2015", "tresas")):
             payload["curves_interp"][i] = np.arange(len(payload["JD_common"])) * 1000
             payload["names"][i] = name.upper().replace("SAN PEDRO", "SAN   PEDRO")
     altered = tmp_path / "altered.pkl"

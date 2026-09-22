@@ -42,7 +42,7 @@ flowchart TD
     D["Conteo de campo"] --> E["Asimilación secuencial"]
     C --> E
     E --> F["Estado actualizado"]
-    F --> G["Pronóstico y riesgo 7 días"]
+    F --> G["Pronóstico e intensidad 7 días"]
     F --> H["Escenarios lluvia / temperatura"]
 ```
 
@@ -51,7 +51,7 @@ El sistema mantiene explícitamente:
 - emergencia acumulada y fracción remanente;
 - humedad superficial estimada y factor hídrico;
 - tiempo térmico desde el primer pico y límite operativo de 800 °Cd;
-- termoinhibición, próxima cohorte y riesgo a siete días;
+- termoinhibición, próxima cohorte e intensidad de emergencia a siete días;
 - observaciones, innovaciones y estados posteriores de cada asimilación;
 - fuente meteorológica y parámetros utilizados.
 
@@ -98,24 +98,104 @@ informa cuántos días de pronóstico están realmente disponibles.
 
 La curva parcial no se normaliza por el total existente al final de esos siete
 días. PREDWEEM utiliza como referencia el progreso acumulado mediano de las
-campañas históricas seleccionadas, excluyendo 2010, 2015, Balcarce y San Pedro,
+campañas históricas seleccionadas, excluyendo 2010, 2015, Balcarce, San Pedro y Tres Arroyos 2025,
 y ancla la escala en la
 fecha del estado. De esta manera, el final del pronóstico no se interpreta como
 100 % de la emergencia. Las temperaturas y precipitaciones pronosticadas
 determinan el incremento de emergencia de los siete días siguientes. Los
 conteos de campo actualizan posteriormente ese estado mediante la asimilación.
 
-La referencia utiliza **nueve curvas**: 2008, 2009, 2011, 2012, 2013, 2014,
-2023 y 2024 (archivos identificados sólo por año), y Tres Arroyos 2025.
-No se atribuyen todas estas series a Bordenave. Balcarce 2025 y San Pedro 2025
-se excluyen antes de calcular P10, mediana y P90. La selección se aplica tanto
-a la aplicación y los escenarios como a la generación de la calibración 2026.
-La interfaz y el perfil JSON registran los nombres utilizados y excluidos.
-El clasificador original se conserva intacto; sus curvas excluidas no
-intervienen en esta referencia estacional.
+El pool reúne **nueve referencias**: **2008, 2009, 2011, 2012, 2013, 2014,
+2023, 2024 y Bordenave 2026**. Las primeras ocho son archivos identificados
+sólo por año; esos nombres no acreditan que todas procedan de Bordenave.
+Una lista explícita impide incorporar automáticamente otras curvas. Se excluyen
+2010, 2015, Balcarce, San Pedro y Tres Arroyos 2025 **antes** de calcular
+P10, mediana y P90. El clasificador original permanece intacto.
+
+**Disponibilidad temporal:** el total de Bordenave 2026 se conoce desde el
+último conteo del **14/09/2026**. Los cortes anteriores usan sólo las ocho
+series previas. Desde esa fecha, incluidas las consultas de 2027, participan
+las nueve referencias. La aplicación, los escenarios y cada corte de las
+evaluaciones de calibración utilizan el mismo criterio.
+
+Para 2026 se emplean los 33 registros de
+`data/calibration/bordenave_2026_counts.csv`, del 10/01 al 14/09. Se suma
+`media(SR).m2`, se divide por el total registrado (**7041,33 plantas/m²**) y se
+interpola el acumulado entre visitas. Cada una de las nueve campañas tiene
+**igual peso**, independientemente de su densidad. No se promedia primero el
+resumen de las ocho curvas con 2026 como dos grupos de igual peso.
+
+Antes del 10/01, la curva 2026 queda desconocida y el resumen usa las ocho
+curvas previas. Para evitar retrocesos al cambiar la composición disponible,
+se conserva el máximo acumulado de cada cuantil. Las columnas `*_Empirico`
+permiten auditar los cuantiles sin esa regularización. Después del último
+conteo, 2026 mantiene el total de su ventana como supuesto de referencia:
+no son nuevas observaciones ni prueba de cierre biológico de la campaña.
+Los percentiles describen el pool; no son intervalos de confianza.
+
+La interfaz y el perfil JSON registran campañas utilizadas y excluidas.
+**Trazabilidad → Curvas de la referencia local** permite descargar el pool,
+incluyendo las nueve curvas normalizadas y el número de campañas por día.
+Incorporar 2026 al pool no carga esos conteos como observaciones de un lote.
 
 Sin siete días futuros, el sistema conserva el estado disponible y muestra una
 advertencia de horizonte incompleto; no presupone que la campaña terminó.
+
+### Gráficos y configuración
+
+La configuración aparece en el cuerpo, sin panel lateral. La vista principal
+presenta **dos gráficos a la par**: flujo y emergencia acumulada, con eje
+temporal del 1 de enero al **1 de octubre**. El selector **Semanal/Diario**
+se inicia en Semanal. El fondo tenue muestra únicamente el **pool histórico
+orientativo**, sin curvas individuales de años; continúa después de la fecha
+del estado para visualizar la trayectoria de referencia del resto del período.
+El gemelo sólo se extiende hasta la meteorología disponible, como máximo siete
+días después del corte. El fondo histórico no crea meteorología ni pronósticos.
+
+Los dos flujos se representan en **% del total por día o por semana**. Un 2 %
+equivale a dos puntos porcentuales del acumulado. El histórico usa los totales
+de sus ventanas registradas; el gemelo usa su total estacional estimado. El
+flujo histórico se deriva de diferencias del acumulado mediano, no de conteos
+diarios. La interpolación y la combinación de campañas suavizan sus picos.
+Las semanas son de lunes a domingo, sin renormalizar; las barras parciales
+aparecen rayadas y especifican sus días disponibles. El acumulado no cambia
+al alternar la frecuencia. Los períodos sin referencia se mantienen desconocidos.
+
+### Intensidad de emergencia a siete días
+
+`Índice = flujo del gemelo de mañana a siete días después / máximo semanal del pool`.
+
+El numerador suma siete flujos diarios futuros. El denominador utiliza el mismo
+pool que los gráficos, trasladado al calendario consultado, y sólo semanas
+completas de lunes a domingo dentro del eje enero–1 de octubre. No es el máximo
+diario ni el máximo individual de una campaña. Ambas magnitudes se calculan
+en la misma escala fraccional y se muestran como porcentajes.
+
+| Intensidad | Condición |
+| --- | --- |
+| 🔴 Alta | Más del 75 % del máximo semanal histórico |
+| 🟠 Media | Del 25 al 75 %, inclusive |
+| 🟡 Baja | Flujo positivo y menor al 25 % del máximo |
+| 🟢 Nula | Flujo semanal exactamente igual a cero |
+
+Se requieren siete fechas futuras válidas: un horizonte incompleto se indica
+en gris, sin clasificarlo como Bajo o Nulo. Con flujo positivo pero sin un
+máximo histórico válido se muestra «Sin referencia». El intervalo futuro
+móvil puede abarcar partes de dos semanas calendario. El selector del gráfico
+no cambia este cálculo. Es intensidad relativa, no probabilidad de emergencia.
+
+### Semáforo del tiempo térmico desde el primer pico
+
+| Indicador | TT acumulado |
+| --- | --- |
+| 🔴 FUERA DE CONTROL | >800 °Cd |
+| 🟠 ULTIMO PLAZO | >700 y ≤800 °Cd |
+| 🟡 CONTROL A TIEMPO | ≥600 y ≤700 °Cd |
+| 🟢 AUN NO CONTROLAR | <600 °Cd |
+
+La categoría se determina con el valor sin redondear en la fecha del estado.
+Se conservan los parámetros fisiológicos, pesos y meteorología de Bordenave;
+no se incorpora el decaimiento específico de Tres Arroyos.
 
 ## Funciones de la aplicación
 
@@ -171,12 +251,14 @@ a otro lote**. El potencial sigue siendo estimado por la asimilación existente.
 
 ### Uso en el gemelo
 
-- Seleccionar **Localidad del lote: Bordenave** y **Usar calibración local 2026**.
+- Seleccionar **Localidad del lote: Bordenave**. **Usar calibración local 2026**
+  está activado por defecto y puede desactivarse sobre los gráficos. El pool
+  histórico se mantiene: la referencia estacional y la calibración son capas distintas.
 - El perfil se aplica antes de la asimilación y también a los escenarios.
   El gráfico permite comparar base, calibración y estado actualizado.
 - No se aplica a otra localidad ni a una fecha anterior al 14/09/2026.
-  Los gráficos del año de ajuste son retrospectivos; el perfil fue preparado
-  el 19/09/2026 y no se presenta como disponible en un pronóstico histórico real.
+  Los gráficos del año de ajuste son retrospectivos; esta revisión del perfil
+  se preparó el 22/09/2026 y no se presenta como disponible en un pronóstico histórico real.
 - Si se están asimilando conteos de la campaña 2026, se utiliza la base
   original para evitar reutilizar esa campaña como calibración y evidencia
   nueva. El perfil permanece guardado para campañas posteriores; sus conteos
@@ -213,14 +295,15 @@ cada corte y se evalúa el siguiente intervalo con meteorología
 observada/provisional. Se conservan las seis fechas de corte de la revisión
 anterior, registradas en `validation_cutoffs`, para que la incorporación de
 una fecha inicial no cambie los intervalos evaluados. El RMSE conjunto pasa
-de **147,97 a 106,59 plantas/m²**, pero sólo un intervalo mejora; la reducción
+de **165,01 a 107,19 plantas/m²**, pero sólo un intervalo mejora; la reducción
 se concentra en ese intervalo.
 No son pronósticos archivados ni validación en otra campaña. No se reduce
 automáticamente la incertidumbre del gemelo ni se infiere precisión para 2027.
-Estos diagnósticos se regeneraron tras excluir Balcarce y San Pedro de la
-referencia. Los conteos, la meteorología fija, los cortes y los pesos neuronales
-son los mismos. El perfil conserva offset 0,50 y slope 1,35, con una nueva
-identidad y huella compatibles con la selección de nueve curvas.
+Estos diagnósticos se regeneraron al reemplazar Tres Arroyos 2025 por Bordenave
+2026 en el pool. Cada evaluación anterior al 14/09 usa sólo las ocho series
+previas, sin el total 2026 conocido después. Los conteos, la meteorología fija,
+los cortes y los pesos neuronales son los mismos. El perfil conserva offset
+0,50 y slope 1,35, con una identidad y huella nuevas, que incluyen el CSV 2026.
 
 ### Reproducción
 
