@@ -28,7 +28,7 @@
   },
   "observations_start": "2026-01-10",
   "initial_zero_reference": true,
-  "model_fingerprint": "718bca1e285001a1e6b97915df094062a96afecc4bfcd74130ca9c695a333df5",
+  "model_fingerprint": "886fa62122a2784b8a617bb66be678c40324284d1eb0760d060f6211f06a794e",
   "model_parameters": {
     "cobertura_pct": 50.0,
     "w_max": 18.8,
@@ -123,5 +123,12 @@
     "Un parámetro en su límite indica que persisten diferencias estructurales.",
     "El ajuste no reduce automáticamente la incertidumbre de asimilación.",
     "Los gráficos de la campaña de ajuste son retrospectivos, no predicciones independientes."
-  ]
+  ],
+  "normalization_revision": {
+    "date": "2026-10-01",
+    "previous_model_fingerprint": "718bca1e285001a1e6b97915df094062a96afecc4bfcd74130ca9c695a333df5",
+    "verification": "Reproducción del ajuste de 32 intervalos al 14/09/2026 con los datos y parámetros originales. Parámetros y métricas de ajuste coinciden; se actualiza la huella tras corregir la disponibilidad inicial y el anclaje temporal.",
+    "parameters_unchanged": true,
+    "fit_metrics_unchanged": true
+  }
 }
