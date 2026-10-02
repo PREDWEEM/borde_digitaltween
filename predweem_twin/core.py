@@ -3,6 +3,11 @@
 La implementación conserva las entradas ANN y los filtros del repositorio
 LOLIUM_BOR2026. Se separó de Streamlit para que pueda probarse, auditarse y
 reutilizarse dentro del gemelo digital.
+
+Reglas v2 (validación 2008-2026, ver MODEL_PROVENANCE.md): termoinhibición
+26 °C, umbral de choque 60 mm, piso del choque 0,5 y techo de decaimiento
+condicionado a la señal previa del 15/04. ``ModelParameters.legacy()`` recupera
+los valores anteriores.
 """
 
 from __future__ import annotations
@@ -20,13 +25,13 @@ from .seasonal import partial_season_normalization, reference_progress
 class ModelParameters:
     cobertura_pct: float = 50.0
     w_max: float = 18.81
-    umbral_termoinhibicion: float = 24.0
-    umbral_choque_hidrico: float = 45.0
+    umbral_termoinhibicion: float = 26.0
+    umbral_choque_hidrico: float = 60.0
     exponente_kr: float = 0.0
     latitud: float = -37.761671
     longitud: float = -63.083717
     latencia_jd: int = 15
-    techo_choque: float = 1.0
+    techo_choque: float = 0.5
     calentamiento_suelo: float = 0.0
     umbral_primer_pico: float = 0.20
     t_base: float = 2.0
@@ -34,6 +39,23 @@ class ModelParameters:
     t_crit: float = 30.0
     tt_control: float = 600.0
     tt_limite: float = 800.0
+    decay_enabled: bool = True
+    decay_tau_days: float = 40.0
+    decay_beta: float = 1.0
+    decay_intensity: float = 0.75
+    decay_cap_fraction: float = 0.25
+    decay_requiere_senal_previa: bool = True
+    decay_umbral_senal_previa: float = 0.5
+    decay_min_dias_senal_previa: int = 1
+
+    @classmethod
+    def legacy(cls, **overrides):
+        """Parámetros previos a las reglas v2 (interruptor de retorno)."""
+        return cls(**{**LEGACY_PARAMETERS, **overrides})
+
+
+LEGACY_PARAMETERS = dict(umbral_termoinhibicion=24.0, umbral_choque_hidrico=45.0, techo_choque=1.0,
+    decay_enabled=False, decay_requiere_senal_previa=False)
 
 
 class PracticalANNModel:
@@ -145,6 +167,69 @@ def daily_coverage(
         left=default,
         right=float(observed["Cobertura_PCT"].iloc[-1]),
     )
+
+
+def apply_cohort_decay(
+    trajectory: pd.DataFrame,
+    first_peak_index: int | None,
+    params: ModelParameters,
+) -> pd.DataFrame:
+    """Techo decreciente desde el 15/04 de cada año, condicionado a la señal previa.
+
+    Hasta el 14/04 no cambia el flujo. Después, el techo parte de una fracción
+    (``decay_cap_fraction``) del máximo previo y decae con ``decay_tau_days``,
+    ``decay_beta`` e ``decay_intensity``.
+
+    Reglas v2: el techo sólo se impone si, antes del 15/04, el propio modelo
+    registró al menos ``decay_min_dias_senal_previa`` días con flujo mayor o
+    igual a ``decay_umbral_senal_previa``. En años de emergencia tardía (sin
+    señal temprana fuerte, p. ej. Bordenave 2010 y 2015) el techo recortaba casi
+    toda la emergencia real. Con ``decay_requiere_senal_previa=False`` se
+    recupera el comportamiento anterior. Si no existe señal positiva previa a
+    abril, nunca se impone un techo.
+    """
+    df = trajectory.copy()
+    df["EMERREL_ANTES_DECAIMIENTO"] = df["EMERREL"].copy()
+    df["Dias_Desde_15Abr"] = 0.0
+    df["Factor_Decaimiento_15Abr"] = 1.0
+    df["Techo_EMERREL_15Abr"] = np.nan
+    df["Techo_Aplicado_15Abr"] = False
+    df["Tau_Decaimiento_15Abr_d"] = params.decay_tau_days
+    df["Beta_Decaimiento_15Abr"] = params.decay_beta
+    df["Intensidad_Decaimiento_15Abr"] = params.decay_intensity
+    df["Fraccion_Maxima_15Abr"] = params.decay_cap_fraction
+
+    if not params.decay_enabled:
+        return df
+
+    tau = max(float(params.decay_tau_days), 1e-9)
+    beta = max(float(params.decay_beta), 1e-9)
+    intensity = float(np.clip(params.decay_intensity, 0.0, 1.0))
+    dates = pd.to_datetime(df["Fecha"])
+    for year in dates.dt.year.unique():
+        start = pd.Timestamp(year=int(year), month=4, day=15)
+        same_year = dates.dt.year.eq(year)
+        before = same_year & dates.lt(start)
+        after = same_year & dates.ge(start)
+        days = (dates.loc[after] - start).dt.days.astype(float)
+        factor = (1.0 - intensity) + intensity * np.exp(-((days / tau) ** beta))
+        df.loc[after, "Dias_Desde_15Abr"] = days
+        df.loc[after, "Factor_Decaimiento_15Abr"] = factor
+        previous = df.loc[before, "EMERREL"].clip(lower=0) if before.any() else pd.Series(dtype=float)
+        previous_max = float(previous.max()) if len(previous) else 0.0
+        strong_days = int((previous >= float(params.decay_umbral_senal_previa)).sum())
+        has_signal = (
+            not params.decay_requiere_senal_previa
+            or strong_days >= int(params.decay_min_dias_senal_previa)
+        )
+        if previous_max > 0.0 and has_signal:
+            cap = float(params.decay_cap_fraction) * previous_max * factor
+            df.loc[after, "Techo_EMERREL_15Abr"] = cap
+            df.loc[after, "Techo_Aplicado_15Abr"] = True
+            df.loc[after, "EMERREL"] = np.minimum(
+                df.loc[after, "EMERREL"].clip(lower=0), cap,
+            )
+    return df
 
 
 def surface_water_balance(prec, et0, w_max=20.0, ke_soil=0.4, kr_exponent=0.0):
@@ -302,6 +387,8 @@ def run_predweem(
     else:
         df.loc[first_peak_index:, "Primer_Pico_Habilitado"] = True
         df.loc[: first_peak_index - 1, "EMERREL"] = 0.0
+
+    df = apply_cohort_decay(df, first_peak_index, params)
 
     df["EMERAC"] = df["EMERREL"].cumsum()
     available_total = float(df["EMERREL"].sum())

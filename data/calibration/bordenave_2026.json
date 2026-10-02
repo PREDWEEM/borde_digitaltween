@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "method": "monotone_logit_v1",
-  "profile_id": "bordenave-2026-09-14-v1-0aebf74b30",
+  "profile_id": "bordenave-2026-09-14-v1-a2a55f3736",
   "site": "Bordenave",
   "status": "experimental_una_campana",
   "training_year": 2026,
@@ -10,42 +10,50 @@
   "season_complete": false,
   "first_interval_excluded": true,
   "parameters": {
-    "offset": 0.5,
-    "slope": 1.35
+    "offset": -0.09999999999999987,
+    "slope": 0.75
   },
   "fit": {
     "n_observations": 33,
     "n_intervals": 32,
     "observed_window_total_plm2": 7041.333333709999,
-    "rmse_base_plm2": 393.12945756435056,
-    "rmse_calibrated_plm2": 356.9274243095037,
-    "weighted_mse_base": 2.2364827211100993,
-    "weighted_mse_calibrated": 1.9125951289268444,
+    "rmse_base_plm2": 321.8852240408763,
+    "rmse_calibrated_plm2": 329.40062604235055,
+    "weighted_mse_base": 1.7392500117021072,
+    "weighted_mse_calibrated": 1.4986984925734914,
     "regularization": 0.05,
-    "nuisance_scale_base": 7044.15325094417,
-    "nuisance_scale_calibrated": 7041.44399421072,
+    "nuisance_scale_base": 7044.153250944171,
+    "nuisance_scale_calibrated": 7063.363635450142,
     "parameter_at_bound": false
   },
   "observations_start": "2026-01-10",
   "initial_zero_reference": true,
-  "model_fingerprint": "886fa62122a2784b8a617bb66be678c40324284d1eb0760d060f6211f06a794e",
+  "model_fingerprint": "e45f5c972d42c7cc8d97ea34ee6da523486f8a2e6718de0454eedd49a7d4983e",
   "model_parameters": {
     "cobertura_pct": 50.0,
     "w_max": 18.8,
-    "umbral_termoinhibicion": 24.0,
-    "umbral_choque_hidrico": 45.0,
+    "umbral_termoinhibicion": 26.0,
+    "umbral_choque_hidrico": 60.0,
     "exponente_kr": 0.0,
     "latitud": -37.761671,
     "longitud": -63.083717,
     "latencia_jd": 15,
-    "techo_choque": 1.0,
+    "techo_choque": 0.5,
     "calentamiento_suelo": 0.0,
     "umbral_primer_pico": 0.2,
     "t_base": 2.0,
     "t_opt": 20.0,
     "t_crit": 30.0,
     "tt_control": 600.0,
-    "tt_limite": 800.0
+    "tt_limite": 800.0,
+    "decay_enabled": true,
+    "decay_tau_days": 40.0,
+    "decay_beta": 1.0,
+    "decay_intensity": 0.75,
+    "decay_cap_fraction": 0.25,
+    "decay_requiere_senal_previa": true,
+    "decay_umbral_senal_previa": 0.5,
+    "decay_min_dias_senal_previa": 1
   },
   "seasonal_reference": {
     "excluded_years": [
@@ -111,24 +119,18 @@
     "independent_season": false,
     "n_intervals": 6,
     "note": "Ajuste con datos hasta cada corte y evaluación del siguiente intervalo. Se usa meteorología observada/provisional, no pronósticos archivados. No demuestra transferencia a otra campaña ni precisión operativa a siete días.",
-    "rmse_base_plm2": 165.00865837379214,
-    "rmse_calibrated_plm2": 107.18858843746565,
-    "intervals_improved": 1
+    "rmse_base_plm2": 124.93073148216756,
+    "rmse_calibrated_plm2": 146.25553320525836,
+    "intervals_improved": 2
   },
   "limitations": [
     "Una sola campaña incompleta. No se estima ni transfiere un total estacional.",
     "El registro inicial de cero del 2026-01-10 delimita el primer intervalo; no se infiere ausencia de emergencia en fechas anteriores.",
+    "Se aplican las reglas v2 (termoinhibición 26 °C, choque hídrico 60 mm con piso 0,5 y techo del 25 % con decaimiento desde el 15/04, condicionado a la señal previa); ver MODEL_PROVENANCE.md.",
     "Cobertura de 50 % y Wmax de 18.8 mm son supuestos de la configuración operativa; el archivo no informa manejo ni cobertura.",
     "La transformación no crea cohortes en fechas bloqueadas por el motor biofísico.",
     "Un parámetro en su límite indica que persisten diferencias estructurales.",
     "El ajuste no reduce automáticamente la incertidumbre de asimilación.",
     "Los gráficos de la campaña de ajuste son retrospectivos, no predicciones independientes."
-  ],
-  "normalization_revision": {
-    "date": "2026-10-01",
-    "previous_model_fingerprint": "718bca1e285001a1e6b97915df094062a96afecc4bfcd74130ca9c695a333df5",
-    "verification": "Reproducción del ajuste de 32 intervalos al 14/09/2026 con los datos y parámetros originales. Parámetros y métricas de ajuste coinciden; se actualiza la huella tras corregir la disponibilidad inicial y el anclaje temporal.",
-    "parameters_unchanged": true,
-    "fit_metrics_unchanged": true
-  }
+  ]
 }

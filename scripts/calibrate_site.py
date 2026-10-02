@@ -157,6 +157,7 @@ def build_calibration(observations_path, weather_path, output_path, site="Borden
         "limitations": [
             "Una sola campaña incompleta. No se estima ni transfiere un total estacional.",
             initial_note,
+            "Se aplican las reglas v2 (termoinhibición 26 °C, choque hídrico 60 mm con piso 0,5 y techo del 25 % con decaimiento desde el 15/04, condicionado a la señal previa); ver MODEL_PROVENANCE.md.",
             "Cobertura de 50 % y Wmax de 18.8 mm son supuestos de la configuración operativa; el archivo no informa manejo ni cobertura.",
             "La transformación no crea cohortes en fechas bloqueadas por el motor biofísico.",
             "Un parámetro en su límite indica que persisten diferencias estructurales.",
