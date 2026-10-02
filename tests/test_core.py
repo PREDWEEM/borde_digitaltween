@@ -3,7 +3,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from predweem_twin.core import ModelParameters, PracticalANNModel, run_predweem
+from predweem_twin.core import (
+    ModelParameters,
+    PracticalANNModel,
+    apply_cohort_decay,
+    run_predweem,
+)
 from predweem_twin.state import thermal_window_dates
 
 
@@ -73,3 +78,42 @@ def test_thermal_window_dates_detects_600_and_800_degree_days():
 
     assert start == pd.Timestamp("2026-04-02")
     assert end == pd.Timestamp("2026-04-04")
+
+
+def test_v2_cap_requires_strong_pre_april_signal():
+    """Reglas v2: sin señal previa fuerte (>=0,5 al menos un día) no hay techo."""
+    dates = pd.date_range("2026-04-01", "2026-08-01")
+    strong = pd.DataFrame({"Fecha": dates, "EMERREL": 0.8})
+    result = apply_cohort_decay(strong, 0, ModelParameters())
+    after = result.Fecha.ge("2026-04-15")
+    assert result.Techo_Aplicado_15Abr.loc[after].all()
+    expected = ModelParameters().decay_cap_fraction * 0.8
+    assert np.isclose(result.loc[result.Fecha.eq("2026-04-15"), "EMERREL"].iloc[0], expected)
+    assert result.loc[result.Fecha.lt("2026-04-15"), "EMERREL"].eq(0.8).all()
+    weak = pd.DataFrame({"Fecha": dates, "EMERREL": np.where(dates < "2026-04-15", 0.3, 0.8)})
+    result = apply_cohort_decay(weak, 0, ModelParameters())
+    assert result.EMERREL.equals(weak.EMERREL)
+    assert not result.Techo_Aplicado_15Abr.any()
+    forced = apply_cohort_decay(weak, 0, ModelParameters(decay_requiere_senal_previa=False))
+    assert forced.loc[forced.Fecha.eq("2026-04-15"), "EMERREL"].iloc[0] < 0.8
+
+
+def test_decay_disabled_and_no_cap_without_pre_april_emergence():
+    frame = pd.DataFrame({"Fecha": pd.date_range("2026-04-16", periods=10), "EMERREL": 0.8})
+    assert apply_cohort_decay(frame, 0, ModelParameters()).EMERREL.equals(frame.EMERREL)
+    frame = pd.DataFrame({"Fecha": pd.date_range("2026-04-01", "2026-06-01"), "EMERREL": 0.8})
+    disabled = apply_cohort_decay(frame, 0, ModelParameters(decay_enabled=False))
+    assert disabled.EMERREL.equals(frame.EMERREL)
+
+
+def test_legacy_parameters_restore_previous_bordenave_behavior():
+    legacy = ModelParameters.legacy()
+    assert legacy.umbral_termoinhibicion == 24.0 and legacy.umbral_choque_hidrico == 45.0
+    assert legacy.techo_choque == 1.0 and not legacy.decay_enabled
+    current = ModelParameters()
+    assert current.umbral_termoinhibicion == 26.0 and current.umbral_choque_hidrico == 60.0
+    assert current.techo_choque == 0.5 and current.decay_cap_fraction == 0.25
+    weather = pd.read_csv(ROOT / "data" / "meteo_daily.csv")
+    model = PracticalANNModel.from_directory(ROOT / "models")
+    result = run_predweem(weather, model, legacy)
+    assert not result.Techo_Aplicado_15Abr.any()

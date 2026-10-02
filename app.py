@@ -167,7 +167,8 @@ with st.expander("Configuración del gemelo", expanded=True):
         )
     st.markdown("**Perfil fisiológico Bordenave**")
     st.caption(
-        "Latencia JD 15 · termoinhibición a 24 °C · "
+        "Latencia JD 15 · termoinhibición a 26 °C · choque hídrico 60 mm (piso 0,5) · "
+        "techo del 25 % desde el 15/04 (sólo si hubo flujo ≥0,5 antes) · "
         "ventana térmica de seguimiento de 600–800 °Cd."
     )
     st.caption("La asimilación modifica el estado estimado, no recalibra la ANN.")
