@@ -10,6 +10,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from acceso import requerir_acceso
+
 from campaign import CAMPAIGN_YEARS, campaign_weather_path, initial_campaign_year
 from predweem_twin.assimilation import assimilate_observations
 from predweem_twin.charts import annual_historical_reference, trajectory_charts
@@ -46,6 +48,7 @@ st.set_page_config(
     page_title="PREDWEEM Digital Twin", page_icon="🌱", layout="wide",
     initial_sidebar_state="collapsed",
 )
+requerir_acceso("Gemelo Digital · Lolium Bordenave")
 
 st.markdown(
     """
