@@ -32,21 +32,35 @@ import numpy as np
 import pandas as pd
 import requests
 
-from campaign import CAMPANIA_END
+from campaign import CAMPAIGN_YEAR, campaign_bounds, campaign_file
 
 
 LATITUD = float(os.getenv("LATITUD", "-37.85"))
 LONGITUD = float(os.getenv("LONGITUD", "-63.02"))
 ZONA_HORARIA = "America/Argentina/Buenos_Aires"
 
-CAMPANIA_START = date(2026, 1, 1)
 HORIZONTE_DIAS = 7
+TOLERANCIA_INICIO_SIGA_DIAS = 10
 TBASE = 2.0
 
-ARCHIVO_MAESTRO_DEFAULT = Path("data/meteo_daily.csv")
-ARCHIVO_SIGA_CACHE = Path("data/siga_bordenave_observado.csv")
+ARCHIVO_MAESTRO_BASE = Path("data/meteo_daily.csv")
+ARCHIVO_SIGA_BASE = Path("data/siga_bordenave_observado.csv")
 DIRECTORIO_PRONOSTICOS = Path("data/historico_pronosticos")
-ARCHIVO_ESTADO = Path("data/estado_actualizacion_meteo.json")
+ARCHIVO_ESTADO_BASE = Path("data/estado_actualizacion_meteo.json")
+
+
+def configurar_campania(anio: int) -> None:
+    """Fija fechas y archivos de la campaña; 2026 conserva sus archivos originales."""
+    global CAMPANIA_ANIO, CAMPANIA_START, CAMPANIA_END
+    global ARCHIVO_MAESTRO_DEFAULT, ARCHIVO_SIGA_CACHE, ARCHIVO_ESTADO
+    CAMPANIA_START, CAMPANIA_END = campaign_bounds(anio)
+    CAMPANIA_ANIO = int(anio)
+    ARCHIVO_MAESTRO_DEFAULT = campaign_file(ARCHIVO_MAESTRO_BASE, anio)
+    ARCHIVO_SIGA_CACHE = campaign_file(ARCHIVO_SIGA_BASE, anio)
+    ARCHIVO_ESTADO = campaign_file(ARCHIVO_ESTADO_BASE, anio)
+
+
+configurar_campania(CAMPAIGN_YEAR)
 
 SIGA_ARCHIVO_LOCAL = Path(os.getenv("SIGA_LOCAL_FILE", "A872817.xls"))
 SIGA_URL_TEMPLATE = os.getenv("SIGA_DOWNLOAD_URL", "").strip()
@@ -996,7 +1010,7 @@ def validar_serie_final(df: pd.DataFrame, fecha_final: date) -> None:
     if fechas.isna().any():
         raise ValueError("La serie final contiene fechas inválidas.")
     if fecha_final > CAMPANIA_END or (fechas.dt.date > CAMPANIA_END).any():
-        raise ValueError("La serie supera el cierre de campaña del 01/10/2026.")
+        raise ValueError(f"La serie supera el cierre de campaña del {CAMPANIA_END:%d/%m/%Y}.")
     if fechas.duplicated().any():
         raise ValueError("La serie final contiene fechas duplicadas.")
 
@@ -1059,20 +1073,43 @@ def validar_serie_final(df: pd.DataFrame, fecha_final: date) -> None:
         raise ValueError("El pronóstico tiene menos de 30 miembros válidos.")
 
 
+def siga_en_tolerancia_inicial(ayer: date) -> bool:
+    """Primeros días de campaña: SIGA puede no publicar aún el año nuevo."""
+    return (ayer - CAMPANIA_START).days < TOLERANCIA_INICIO_SIGA_DIAS
+
+
+def obtener_observaciones_campania(
+    ayer: date,
+    siga_file: Path | None = None,
+) -> tuple[pd.DataFrame, str]:
+    if ayer < CAMPANIA_START:
+        # Primer día de campaña: todavía no hay fechas vencidas que observar.
+        return asegurar_columnas(pd.DataFrame()), "sin_fechas_vencidas"
+    try:
+        observaciones, estado_siga = obtener_siga_dataframe(
+            CAMPANIA_START,
+            ayer,
+            archivo_forzado=siga_file,
+        )
+    except RuntimeError as error:
+        if not siga_en_tolerancia_inicial(ayer):
+            raise
+        print(f"⚠️ SIGA sin datos al inicio de campaña; se usa ECMWF provisional: {error}")
+        return asegurar_columnas(pd.DataFrame()), "SIGA_no_disponible_inicio_campania"
+    if observaciones.empty and not siga_en_tolerancia_inicial(ayer):
+        raise ValueError("SIGA no aportó ninguna observación válida.")
+    return observaciones, estado_siga
+
+
 def construir_meteo_daily(
-    output: Path = ARCHIVO_MAESTRO_DEFAULT,
+    output: Path | None = None,
     siga_file: Path | None = None,
 ) -> pd.DataFrame:
+    output = Path(output) if output is not None else ARCHIVO_MAESTRO_DEFAULT
     hoy = hoy_argentina()
     ayer = min(hoy - timedelta(days=1), CAMPANIA_END)
 
-    observaciones, estado_siga = obtener_siga_dataframe(
-        CAMPANIA_START,
-        ayer,
-        archivo_forzado=siga_file,
-    )
-    if observaciones.empty:
-        raise ValueError("SIGA no aportó ninguna observación válida.")
+    observaciones, estado_siga = obtener_observaciones_campania(ayer, siga_file)
 
     huecos_siga = fechas_faltantes_siga(
         observaciones,
@@ -1121,14 +1158,17 @@ def construir_meteo_daily(
     escribir_csv_atomico(combinado, output)
 
     fechas_obs = pd.to_datetime(observaciones["Fecha"], errors="coerce").dropna()
-    ultima_observacion = fechas_obs.max().date()
+    ultima_observacion = fechas_obs.max().date() if not fechas_obs.empty else None
     estado = {
         "ejecucion_utc": fecha_utc_iso(),
         "sitio": "Bordenave / INTA",
         "latitud": LATITUD,
         "longitud": LONGITUD,
         "estado_siga": estado_siga,
-        "ultima_observacion_siga": ultima_observacion.isoformat(),
+        "ultima_observacion_siga": (
+            ultima_observacion.isoformat() if ultima_observacion else None
+        ),
+        "campania": CAMPANIA_ANIO,
         "huecos_siga": [fecha.isoformat() for fecha in huecos_siga],
         "fuente_provisional": (
             "ECMWF_IFS_HISTORICO" if not provisionales.empty else None
@@ -1196,8 +1236,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--output",
-        default=str(ARCHIVO_MAESTRO_DEFAULT),
-        help="Archivo de salida CSV.",
+        default=None,
+        help="Archivo de salida CSV (por defecto, el de la campaña).",
+    )
+    parser.add_argument(
+        "--year",
+        type=int,
+        default=CAMPAIGN_YEAR,
+        help="Campaña meteorológica; por defecto, el año calendario de Argentina.",
     )
     parser.add_argument(
         "--siga-file",
@@ -1211,7 +1257,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    output = Path(args.output)
+    configurar_campania(args.year)
+    if hoy_argentina() < CAMPANIA_START:
+        print(
+            f"❌ La campaña {args.year} aún no comenzó; no se genera meteorología futura.",
+            file=sys.stderr,
+        )
+        return 1
+    output = Path(args.output) if args.output else ARCHIVO_MAESTRO_DEFAULT
     siga_file = Path(args.siga_file) if args.siga_file else None
     try:
         if args.solo_validar_siga:
